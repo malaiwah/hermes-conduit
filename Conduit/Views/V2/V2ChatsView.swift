@@ -255,6 +255,9 @@ struct V2ChatsView: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var searchText = ""
     @FocusState private var searchFocused: Bool
+    /// Hermes' full-text search behind the field, for chats whose messages
+    /// match ("In messages").
+    @StateObject private var contentSearch = SessionContentSearchModel()
     @State private var showArchivedSessions = false
     @State private var showProjectCreator = false
     @State private var sessionPendingDeletion: SessionSummary?
@@ -687,6 +690,33 @@ struct V2ChatsView: View, Equatable {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// What the content search follows: the query, and where it goes.
+    private var contentSearchKey: String {
+        let bridge = appState.dashboardTicketBridge.map { String(describing: ObjectIdentifier($0)) } ?? "-"
+        return [showingProjects ? "" : searchText, appState.activeProfile, String(appState.isConnected), bridge]
+            .joined(separator: "\u{1F}")
+    }
+
+    private func updateContentSearch() {
+        contentSearch.update(
+            query: showingProjects ? "" : searchText,
+            context: appState.sessionContentSearchContext
+        )
+    }
+
+    /// Chats whose messages match and the list above (`displayed`) doesn't
+    /// already show. Under a filter, only chats that filter lists.
+    private func contentSearchRows(_ displayed: [SessionSummary]) -> [SessionContentSearchRow] {
+        guard isSearching, !contentSearch.hits.isEmpty else { return [] }
+        let known = appState.activeProfileSessions + appState.activeProfileCronSessions
+        return SessionContentSearch.rows(
+            hits: contentSearch.hits,
+            listed: displayed,
+            known: known,
+            allowed: selection.isEmpty ? nil : filterRows(selection, searching: true)
+        )
+    }
+
     private func nestedSections(_ displayed: [SessionSummary]) -> (pinned: [SessionNesting.Node], recent: [SessionNesting.Node]) {
         SessionNesting.sections(
             displayed,
@@ -730,10 +760,11 @@ struct V2ChatsView: View, Equatable {
         // Worked out once per render: the rows walk the whole catalog.
         let displayed = displayedSessions
         let sections = nestedSections(displayed)
+        let contentRows = contentSearchRows(displayed)
         let expanded = expandedNestIDs
         let layout = SidebarOfflineLayout.visibility(
             showingProjects: false,
-            displayedSessionsEmpty: displayed.isEmpty,
+            displayedSessionsEmpty: displayed.isEmpty && contentRows.isEmpty,
             isLoadingList: appState.isLoadingChatList
         )
         return List {
@@ -767,7 +798,7 @@ struct V2ChatsView: View, Equatable {
                     .listRowSeparator(.hidden)
             }
 
-            if layout.emptyState {
+            if layout.emptyState && !contentSearch.isSearching {
                 // Only a catalog Hermes answered says "No Sessions": right
                 // after a sign-in the list is empty until its first read
                 // lands, and a failed read says it failed.
@@ -798,6 +829,16 @@ struct V2ChatsView: View, Equatable {
                     collapsibleSection(group.section, nodes: group.nodes, expanded: expanded)
                 }
             }
+
+            if layout.liveSections && (!contentRows.isEmpty || contentSearch.isSearching) {
+                Section {
+                    ForEach(contentRows) { row in
+                        contentSearchRow(row)
+                    }
+                } header: {
+                    contentSearchHeader
+                }
+            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -811,6 +852,7 @@ struct V2ChatsView: View, Equatable {
             revealActiveNestAncestors()
             revealActiveSection()
         }
+        .onChange(of: contentSearchKey, initial: true) { _, _ in updateContentSearch() }
         .onChange(of: appState.activeSessionId) { _, _ in revealActiveNestAncestors() }
         .onChange(of: displayed) { _, _ in
             revealActiveNestAncestors()
@@ -944,6 +986,61 @@ struct V2ChatsView: View, Equatable {
             .frame(maxWidth: .infinity, alignment: .leading)
             .listRowInsets(EdgeInsets())
             .accessibilityAddTraits(.isHeader)
+    }
+
+    /// "In messages", with a spinner while Hermes is still searching.
+    private var contentSearchHeader: some View {
+        HStack(spacing: 6) {
+            sectionHeader(AppLocalization.string("In messages"))
+                .fixedSize()
+            if contentSearch.isSearching {
+                ProgressView()
+                    .controlSize(.mini)
+                    .accessibilityLabel(AppLocalization.string("Searching messages"))
+            }
+            Spacer(minLength: 0)
+        }
+        .listRowInsets(EdgeInsets())
+    }
+
+    /// A chat Hermes found by its messages: its title, then the matching
+    /// line with the match picked out. A listed chat keeps its row actions.
+    @ViewBuilder
+    private func contentSearchRow(_ row: SessionContentSearchRow) -> some View {
+        let button = Button {
+            Haptics.light()
+            appState.dismissSidebarDrawer()
+            if row.session != nil {
+                appState.requestOpenSession(row.openID)
+            } else {
+                // Older than any listed row: the link route opens it and
+                // refreshes the list, as a job link does.
+                appState.openAppLink(.session(id: row.openID))
+            }
+        } label: {
+            V2ContentMatchRow(
+                title: row.title,
+                time: row.session?.updatedLabel ?? "",
+                snippet: row.hit.snippet,
+                isUnread: row.session.map { appState.isSessionUnread($0) } ?? false,
+                isSelected: row.openID == appState.activeSessionId
+            )
+        }
+        .buttonStyle(.plain)
+        if let session = row.session {
+            button
+                .accessibilityHint(AppLocalization.string("Swipe or touch and hold for conversation actions."))
+                .v2ListRow()
+                .sessionActions(
+                    appState: appState,
+                    session: session,
+                    nest: nil,
+                    onRename: { sessionPendingRename = session },
+                    onDelete: { sessionPendingDeletion = session }
+                )
+        } else {
+            button.v2ListRow()
+        }
     }
 
     /// "Search Home" names the profile the list belongs to.
