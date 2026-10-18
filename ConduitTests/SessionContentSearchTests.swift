@@ -150,6 +150,18 @@ final class SessionContentSearchTests: XCTestCase {
         XCTAssertEqual(SessionContentSearch.hits(from: ["results": []], query: "x"), [])
     }
 
+    /// Searching from the first keystroke, so the list never shows "no
+    /// results" while the debounce runs.
+    func testAQueryIsSearchingDuringItsDebounce() async {
+        let stub = StubSearchRequester()
+        let model = SessionContentSearchModel(support: SessionContentSearchSupport(), debounce: .seconds(30))
+        model.update(query: "recycling", context: context(stub))
+        XCTAssertTrue(model.isSearching)
+        XCTAssertEqual(stub.paths, [], "Nothing is asked before the debounce ends")
+        model.update(query: "", context: context(stub))
+        XCTAssertFalse(model.isSearching)
+    }
+
     func testModelPublishesHitsForTheQuery() async {
         let stub = StubSearchRequester()
         stub.responses[path("recycling")] = .success(["results": [result("s1", snippet: ">>>recycling<<< day")]])

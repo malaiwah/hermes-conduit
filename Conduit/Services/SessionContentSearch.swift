@@ -312,7 +312,7 @@ final class SessionContentSearchModel: ObservableObject {
     @Published private(set) var hits: [SessionContentSearchHit] = []
     /// The query `hits` answer; nil while there are none to show.
     @Published private(set) var resultsQuery: String?
-    /// A request for the current query is waiting on Hermes.
+    /// The current query is waiting for its debounce or for Hermes.
     @Published private(set) var isSearching = false
 
     private let support: SessionContentSearchSupport
@@ -355,6 +355,9 @@ final class SessionContentSearchModel: ObservableObject {
         guard key != currentKey else { return }
         reset()
         currentKey = key
+        // Searching from the first keystroke, debounce included: the list
+        // doesn't flash "no results" before Hermes is asked.
+        isSearching = true
         generation += 1
         let generation = generation
         let path = SessionContentSearch.path(query: query, profile: context.profile)
@@ -365,7 +368,6 @@ final class SessionContentSearchModel: ObservableObject {
         task = Task { @MainActor [weak self] in
             do { try await sleep(debounce) } catch { return }
             guard !Task.isCancelled, let self, self.generation == generation else { return }
-            self.isSearching = true
             let outcome: Result<[String: Any], Error>
             do { outcome = .success(try await request(path)) } catch { outcome = .failure(error) }
             // The bridge doesn't stop a request it already sent: an answer
