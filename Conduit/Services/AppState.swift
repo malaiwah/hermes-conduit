@@ -868,7 +868,28 @@ final class AppState: ObservableObject {
     /// failed until the user tries again.
     func loadSessionCatalogIfNeeded() async {
         guard isConnected, turnState != .synchronizing, sessionCatalogPhase == .notLoaded else { return }
-        await loadSessions()
+        // One read at a time for one dashboard profile: two lists (or two
+        // passes of one) that start it together share it.
+        let owner = sessionCatalogOwner
+        if let running = sessionCatalogFirstRead, running.owner == owner {
+            await running.task.value
+            return
+        }
+        let task = Task<Void, Never> { @MainActor [weak self] in
+            guard let self else { return }
+            await self.loadSessions()
+        }
+        sessionCatalogFirstRead = SessionCatalogFirstRead(owner: owner, task: task)
+        await task.value
+        if sessionCatalogFirstRead?.owner == owner { sessionCatalogFirstRead = nil }
+    }
+
+    /// The list's own first catalog read while it runs.
+    private var sessionCatalogFirstRead: SessionCatalogFirstRead?
+
+    private struct SessionCatalogFirstRead {
+        let owner: SessionCatalogOwner
+        let task: Task<Void, Never>
     }
     @Published var activeSessionId: String? {
         didSet {

@@ -196,6 +196,34 @@ final class SessionCatalogLoadTests: XCTestCase {
         XCTAssertEqual(loads, 1, "a loaded catalog is not read again")
     }
 
+    /// Two views that start the first read together share one read.
+    func testTwoFirstReadsAtOnceShareOneRead() async {
+        var loads = 0
+        var release: CheckedContinuation<Void, Never>?
+        var appState: AppState!
+        appState = AppState(
+            defaults: defaults,
+            loadSavedConnection: false,
+            sessionCatalogLoader: { _ in
+                loads += 1
+                await withCheckedContinuation { release = $0 }
+                return [self.row("a", profile: appState.activeProfile)]
+            }
+        )
+        appState.isConnected = true
+
+        async let first: Void = appState.loadSessionCatalogIfNeeded()
+        async let second: Void = appState.loadSessionCatalogIfNeeded()
+        while release == nil { await Task.yield() }
+        for _ in 0..<20 { await Task.yield() }
+        release?.resume()
+        _ = await (first, second)
+
+        XCTAssertEqual(loads, 1, "the second caller waited for the first read")
+        XCTAssertEqual(appState.sessions.map(\.id), ["a"])
+        XCTAssertEqual(appState.sessionCatalogPhase, .loaded)
+    }
+
     /// A failed first read stays failed (with Try Again) instead of the
     /// list retrying on its own in a loop.
     func testAFailedFirstReadIsNotRetriedAutomatically() async {
