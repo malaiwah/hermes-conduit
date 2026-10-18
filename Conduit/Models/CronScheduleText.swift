@@ -253,6 +253,15 @@ enum CronScheduleText {
                 $0.timeStyle = .short
                 $0.doesRelativeDateFormatting = true
             }
+            // The formatter says "tomorrow" against the real clock, not
+            // `now`. Moving the run by the whole days between the two keeps
+            // its wall-clock time and makes its day relative to `now` (they
+            // differ only when a caller passes another `now`, as tests do).
+            let realToday = calendar.startOfDay(for: Date())
+            let shift = calendar.dateComponents([.day], from: startOfToday, to: realToday).day ?? 0
+            if shift != 0, let shown = calendar.date(byAdding: .day, value: shift, to: date) {
+                return formatter.string(from: shown)
+            }
         } else {
             let template = dayOffset < 7 ? "EEEEjmm"
                 : calendar.isDate(date, equalTo: now, toGranularity: .year) ? "MMMdjmm" : "yMMMdjmm"

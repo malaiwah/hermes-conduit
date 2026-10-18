@@ -131,6 +131,8 @@ final class CronScheduleTextTests: XCTestCase {
         XCTAssertEqual(runText("2026-10-17T08:52:20-04:00", now: "2026-10-17T08:52:00-04:00"), "in 1 minute")
     }
 
+    /// Pinned `now`, locale and zone: passes at any real hour (the day
+    /// words are relative to `now`, never to the real clock).
     func testTomorrowAndLaterRunsReadAsADayAndTime() {
         XCTAssertEqual(runText("2026-10-18T07:00:00-04:00", now: "2026-10-17T08:00:00-04:00"), "tomorrow at 7:00 AM")
         XCTAssertEqual(runText("2026-10-23T08:00:00-04:00", now: "2026-10-17T08:00:00-04:00"), "Friday 8:00 AM")
