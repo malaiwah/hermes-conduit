@@ -147,6 +147,65 @@ extension HermesClientTests {
         assertDashboardUpgrade(upgrade, route: "/api/audio/transcribe-stream", ticket: "fixture-ticket-1", bearer: nil)
     }
 
+    /// The speech-server relay's speak socket: its ticket, no cookie from
+    /// the shared jar, on the dashboard socket session.
+    func testSpeechServerSpeakUpgradeCarriesItsTicketAndNoCookie() async throws {
+        let fixture = try DashboardSocketFixture()
+        defer { fixture.stop() }
+        let dashboard = nativeDashboard(at: fixture.baseURL, access: "access-relay-speak")
+        seedAmbientCookie()
+
+        let gateway = HermesVoiceGateway(bridge: dashboard.bridge, baseURL: fixture.baseURL, profile: "work")
+        let stream = try await gateway.openSpeechServerSpeech(onStart: { _ in }, onPCM16: { _, _ in })
+        defer { stream.cancel() }
+
+        let upgrade = try await fixture.waitForUpgrades(1).first
+        assertDashboardUpgrade(upgrade, route: SpeechServerSpeechStream.socketPath, ticket: "fixture-ticket-1", bearer: nil)
+        XCTAssertEqual(upgrade.map(DashboardSocketFixture.query(of:))?["mode"], "speak")
+    }
+
+    /// The speech-server relay's transcription socket, the same way.
+    func testSpeechServerTranscriptionUpgradeCarriesItsTicketAndNoCookie() async throws {
+        let fixture = try DashboardSocketFixture()
+        defer { fixture.stop() }
+        let dashboard = nativeDashboard(at: fixture.baseURL, access: "access-relay-transcribe")
+        seedAmbientCookie()
+
+        let gateway = HermesVoiceGateway(bridge: dashboard.bridge, baseURL: fixture.baseURL, profile: "default")
+        let transcription = await gateway.openSpeechServerTranscription(sampleRate: 16_000, onPartial: { _ in }, onFailure: { _ in })
+        XCTAssertNotNil(transcription)
+        defer { transcription?.cancel() }
+
+        let upgrade = try await fixture.waitForUpgrades(1).first
+        assertDashboardUpgrade(upgrade, route: SpeechServerTranscription.socketPath, ticket: "fixture-ticket-1", bearer: nil)
+    }
+
+    /// Neither relay socket follows a redirect: the ticket and the proxy
+    /// headers never reach where `Location` points.
+    func testSpeechServerRelaySocketsRefuseRedirects() async throws {
+        let elsewhere = try LoopbackHTTPServer.start { request in .webSocketUpgrade(for: request) }
+        defer { elsewhere.stop() }
+        let fixture = try DashboardSocketFixture(
+            upgradeStatuses: [302, 302],
+            redirectLocation: "http://localhost:\(elsewhere.port)/collect"
+        )
+        defer { fixture.stop() }
+        let dashboard = nativeDashboard(at: fixture.baseURL, access: "access-relay-redirect")
+
+        let gateway = HermesVoiceGateway(bridge: dashboard.bridge, baseURL: fixture.baseURL, profile: "default")
+        let stream = try await gateway.openSpeechServerSpeech(onStart: { _ in }, onPCM16: { _, _ in })
+        defer { stream.cancel() }
+        let transcription = await gateway.openSpeechServerTranscription(sampleRate: 16_000, onPartial: { _ in }, onFailure: { _ in })
+        defer { transcription?.cancel() }
+
+        _ = try await fixture.waitForUpgrades(2)
+        // Give a followed redirect every chance to arrive before asserting
+        // that none did.
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertTrue(elsewhere.receivedRequests.isEmpty, "No relay socket follows the redirect")
+        XCTAssertEqual(fixture.upgrades.count, 2)
+    }
+
     func testGrokRelayUpgradeFromAppStateCarriesItsTicketAndNoCookie() async throws {
         let fixture = try DashboardSocketFixture()
         defer { fixture.stop() }
