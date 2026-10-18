@@ -52,9 +52,10 @@ struct V2VoiceButton: View {
         if returnsToCall || needsSetup { return true }
         guard !isStarting, !appState.isPreparingVoiceResume,
               appState.canStartPhoneVoiceConversation, !appState.isVoiceInUse else { return false }
-        // In a chat, like the composer's voice button: not mid-sync or busy.
+        // In a chat, like the composer's voice button: not mid-sync, and a
+        // running reply only holds back classic voice.
         if context == .conversation {
-            return appState.composerIsEnabled && !appState.isBusy
+            return appState.composerIsEnabled && !appState.voiceWaitsForRunningTurn
         }
         return true
     }

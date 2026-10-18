@@ -195,8 +195,11 @@ final class PresentedScreensSync: ObservableObject {
     /// the host in each exchange. "show-cards": it shows the cards
     /// `conduit_show` puts on a voice call's screen. "chat-cards": it draws
     /// conduit_show's map and place cards in a chat, so the host offers the
-    /// tool there too.
-    static let features = ["maps-navigate", "show-cards", "chat-cards"]
+    /// tool there too. "info-cards": it also draws stats, charts, forecasts,
+    /// comparisons and steps (plugin 0.46+). "media-cards": photos, videos,
+    /// audio and contacts; "live-cards": statuses and cards kept up to date
+    /// under a live name (plugin 0.47+).
+    static let features = ["maps-navigate", "show-cards", "chat-cards", "info-cards", "media-cards", "live-cards"]
     /// Card ids remembered as seen, so a card is shown at most once.
     private static let maxSeenCards = 200
     private static let resultsKey = "conduit.presentedScreens.results.v1"

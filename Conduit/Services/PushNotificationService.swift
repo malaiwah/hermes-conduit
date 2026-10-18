@@ -611,6 +611,13 @@ final class PushNotificationService: ObservableObject {
     private var registration: StoredRegistration?
     private var deviceToken: String?
     private var tokenContinuation: CheckedContinuation<String, Error>?
+    /// Registration proof: the relay pushes a one-time nonce to the device
+    /// token, and the registration (or a move to a new token) sends it back.
+    private var awaitingTokenChallenge = false
+    private var receivedTokenChallenge: String?
+    private var tokenChallengeContinuation: CheckedContinuation<String, Error>?
+    /// Callers waiting for another proof to finish: each nonce works once.
+    private var tokenProofWaiters: [CheckedContinuation<Void, Never>] = []
     private var navigationRetryTask: Task<Void, Never>?
     private var pendingRetryCount = 0
     private let maxNotificationRetriesPerTarget = 1
@@ -942,19 +949,34 @@ final class PushNotificationService: ObservableObject {
     /// route; pairing with another relay tries again.
     private var liveActivitiesUnsupportedInstallation: String?
 
+    /// What a Live Activity token registration's HTTP status says about the
+    /// relay's route: a success confirms it, a 404 means the relay has
+    /// none, anything else says nothing.
+    nonisolated static func liveActivityRouteExists(registrationStatus status: Int) -> Bool? {
+        switch status {
+        case 200..<300: true
+        case 404: false
+        default: nil
+        }
+    }
+
     /// Registers the push token of the Live Activity Conduit started for a
     /// chat, under the ids the chat is known by (at most 6, the relay's
     /// limit), so the host's progress reports reach it. Best effort: without
     /// notifications, or on a relay without the route, the activity is only
-    /// updated while Conduit runs.
-    func registerLiveActivity(token: String, sessionIDs: [String]) async {
+    /// updated while Conduit runs. Returns the installation whose relay
+    /// took the token, the one case the Conduit plugin can update and end
+    /// it by push; nil otherwise.
+    @discardableResult
+    func registerLiveActivity(token: String, sessionIDs: [String]) async -> String? {
         guard let registration, liveActivitiesUnsupportedInstallation != registration.installationID,
-              !sessionIDs.isEmpty else { return }
-        await sendLiveActivity(
+              !sessionIDs.isEmpty else { return nil }
+        let routeExists = await sendLiveActivity(
             LiveActivityRegistration(pushToken: token, sessionIDs: Array(sessionIDs.prefix(6))),
             method: "PUT",
             registration: registration
         )
+        return routeExists == true ? registration.installationID : nil
     }
 
     /// The activity ended on the phone: the relay forgets its token.
@@ -963,7 +985,10 @@ final class PushNotificationService: ObservableObject {
         await sendLiveActivity(LiveActivityRemoval(pushToken: token), method: "DELETE", registration: registration)
     }
 
-    private func sendLiveActivity<Body: Encodable>(_ body: Body, method: String, registration: StoredRegistration) async {
+    /// Sends a token's registration or removal; for a registration, what
+    /// its answer says about the relay's route (nil when it says nothing).
+    @discardableResult
+    private func sendLiveActivity<Body: Encodable>(_ body: Body, method: String, registration: StoredRegistration) async -> Bool? {
         do {
             let request = try jsonRequest(
                 path: "/v1/installations/\(registration.installationID)/live-activities",
@@ -972,12 +997,17 @@ final class PushNotificationService: ObservableObject {
                 credential: registration.credential
             )
             let (_, response) = try await URLSession.shared.data(for: request)
-            // Only a registration's 404 means the relay has no route.
-            if method == "PUT", (response as? HTTPURLResponse)?.statusCode == 404 {
+            // Only a registration's answer says whether the relay has the
+            // route.
+            guard method == "PUT", let status = (response as? HTTPURLResponse)?.statusCode,
+                  let routeExists = Self.liveActivityRouteExists(registrationStatus: status) else { return nil }
+            if !routeExists {
                 liveActivitiesUnsupportedInstallation = registration.installationID
             }
+            return routeExists
         } catch {
             // The activity still updates while Conduit runs.
+            return nil
         }
     }
 
@@ -1321,6 +1351,72 @@ final class PushNotificationService: ObservableObject {
     func didFailToRegister(_ error: Error) {
         tokenContinuation?.resume(throwing: error)
         tokenContinuation = nil
+    }
+
+    /// The nonce in the relay's registration challenge push, or nil.
+    nonisolated static func tokenChallenge(in userInfo: [AnyHashable: Any]) -> String? {
+        guard let nonce = userInfo["conduit_token_challenge"] as? String,
+              nonce.utf8.count == 43,
+              nonce.unicodeScalars.allSatisfy({ $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_") })
+        else { return nil }
+        return nonce
+    }
+
+    /// A challenge push arrived; one nobody is waiting for is dropped.
+    func receiveTokenChallenge(_ nonce: String) {
+        guard awaitingTokenChallenge else { return }
+        if let continuation = tokenChallengeContinuation {
+            tokenChallengeContinuation = nil
+            continuation.resume(returning: nonce)
+        } else {
+            receivedTokenChallenge = nonce
+        }
+    }
+
+    private func failTokenChallenge(_ error: Error) {
+        tokenChallengeContinuation?.resume(throwing: error)
+        tokenChallengeContinuation = nil
+    }
+
+    /// Asks the relay to push a nonce to `deviceToken` and waits for it.
+    private func proveDeviceToken(_ deviceToken: String, timeout: Duration = .seconds(20)) async throws -> String {
+        while awaitingTokenChallenge {
+            await withCheckedContinuation { tokenProofWaiters.append($0) }
+        }
+        // A caller that gave up while it waited doesn't start a proof.
+        try Task.checkCancellation()
+        awaitingTokenChallenge = true
+        receivedTokenChallenge = nil
+        defer {
+            awaitingTokenChallenge = false
+            receivedTokenChallenge = nil
+            let waiters = tokenProofWaiters
+            tokenProofWaiters = []
+            waiters.forEach { $0.resume() }
+        }
+        let body = TokenChallengeRequest(bundleID: bundleID, deviceToken: deviceToken, environment: "production")
+        var request = try jsonRequest(path: "/v1/token-challenges", method: "POST", body: body)
+        // The whole proof stays near the push wait, not URLSession's minute.
+        request.timeoutInterval = 15
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validate(response: response, data: data)
+        // The push can beat the relay's answer.
+        if let nonce = receivedTokenChallenge { return nonce }
+        let timeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled else { return }
+            self?.failTokenChallenge(PushNotificationError.tokenProofTimeout)
+        }
+        defer { timeoutTask.cancel() }
+        return try await withCheckedThrowingContinuation { continuation in
+            tokenChallengeContinuation = continuation
+        }
+    }
+
+    /// The relay wants proof that this phone holds the device token (0.16+).
+    nonisolated static func requiresTokenProof(response: URLResponse, data: Data) -> Bool {
+        guard (response as? HTTPURLResponse)?.statusCode == 403 else { return false }
+        return (try? JSONDecoder().decode(RelayErrorCode.self, from: data))?.error == "token_proof_required"
     }
 
     func receiveNotificationPayload(_ userInfo: [AnyHashable: Any]) {
@@ -1822,9 +1918,12 @@ final class PushNotificationService: ObservableObject {
         let voipToken = self.voipToken
         let watchToken = ringingWatchVoIPToken
         let locationToken = relayLocationToken
-        let body = RegistrationRequest(bundleID: bundleID, deviceToken: deviceToken, environment: "production", preferences: preferences, voipToken: voipToken, watchVoipToken: watchToken, locationToken: locationToken)
-        var request = try jsonRequest(path: "/v1/installations", method: "POST", body: body)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        var body = RegistrationRequest(bundleID: bundleID, deviceToken: deviceToken, environment: "production", preferences: preferences, voipToken: voipToken, watchVoipToken: watchToken, locationToken: locationToken)
+        var (data, response) = try await URLSession.shared.data(for: jsonRequest(path: "/v1/installations", method: "POST", body: body))
+        if Self.requiresTokenProof(response: response, data: data) {
+            body.tokenProof = try await proveDeviceToken(deviceToken)
+            (data, response) = try await URLSession.shared.data(for: jsonRequest(path: "/v1/installations", method: "POST", body: body))
+        }
         try validate(response: response, data: data)
         let responseBody = try JSONDecoder().decode(RegistrationResponse.self, from: data)
         registration = StoredRegistration(credential: responseBody.credential, installationID: responseBody.installation.id, preferences: responseBody.installation.preferences ?? preferences, relayURL: issuer.absoluteString)
@@ -1853,9 +1952,14 @@ final class PushNotificationService: ObservableObject {
         let watchChange: VoIPTokenChange = registration.watchVoipToken == watchToken ? .keep : (watchToken.map(VoIPTokenChange.set) ?? .clear)
         let locationToken = relayLocationToken
         let locationChange: VoIPTokenChange = registration.locationToken == locationToken ? .keep : (locationToken.map(VoIPTokenChange.set) ?? .clear)
-        let body = UpdateRegistrationRequest(deviceToken: deviceToken ?? self.deviceToken, preferences: preferences, voipToken: voipChange, watchVoipToken: watchChange, locationToken: locationChange)
-        var request = try jsonRequest(path: "/v1/installations/\(registration.installationID)", method: "PUT", body: body, credential: registration.credential)
-        let (data, response) = try await URLSession.shared.data(for: request)
+        var body = UpdateRegistrationRequest(deviceToken: deviceToken ?? self.deviceToken, preferences: preferences, voipToken: voipChange, watchVoipToken: watchChange, locationToken: locationChange)
+        let path = "/v1/installations/\(registration.installationID)"
+        var (data, response) = try await URLSession.shared.data(for: jsonRequest(path: path, method: "PUT", body: body, credential: registration.credential))
+        // A new device token needs the same proof as registering it.
+        if Self.requiresTokenProof(response: response, data: data), let token = body.deviceToken {
+            body.tokenProof = try await proveDeviceToken(token)
+            (data, response) = try await URLSession.shared.data(for: jsonRequest(path: path, method: "PUT", body: body, credential: registration.credential))
+        }
         try validate(response: response, data: data)
         self.registration?.preferences = preferences
         let installation = (try? JSONDecoder().decode(UpdateRegistrationResponse.self, from: data))?.installation
@@ -1952,10 +2056,19 @@ private struct RegistrationRequest: Encodable {
     var voipToken: String? = nil
     var watchVoipToken: String? = nil
     var locationToken: String? = nil
+    /// The relay's pushed nonce, once it asked for one.
+    var tokenProof: String? = nil
     enum CodingKeys: String, CodingKey {
         case bundleID = "bundle_id", deviceToken = "device_token", environment, preferences, voipToken = "voip_token"
-        case watchVoipToken = "watch_voip_token", locationToken = "location_token"
+        case watchVoipToken = "watch_voip_token", locationToken = "location_token", tokenProof = "token_proof"
     }
+}
+
+private struct TokenChallengeRequest: Encodable {
+    let bundleID: String
+    let deviceToken: String
+    let environment: String
+    enum CodingKeys: String, CodingKey { case bundleID = "bundle_id", deviceToken = "device_token", environment }
 }
 
 /// What an update does to the relay's PushKit token.
@@ -1971,15 +2084,18 @@ struct UpdateRegistrationRequest: Encodable {
     var voipToken: VoIPTokenChange = .keep
     var watchVoipToken: VoIPTokenChange = .keep
     var locationToken: VoIPTokenChange = .keep
+    /// The relay's pushed nonce, when the device token changed.
+    var tokenProof: String? = nil
     enum CodingKeys: String, CodingKey {
         case deviceToken = "device_token", preferences, voipToken = "voip_token", watchVoipToken = "watch_voip_token"
-        case locationToken = "location_token"
+        case locationToken = "location_token", tokenProof = "token_proof"
     }
 
     /// A token is left out to keep it, null to clear it.
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(deviceToken, forKey: .deviceToken)
+        try container.encodeIfPresent(tokenProof, forKey: .tokenProof)
         try container.encode(preferences, forKey: .preferences)
         for (change, key) in [(voipToken, CodingKeys.voipToken), (watchVoipToken, CodingKeys.watchVoipToken), (locationToken, CodingKeys.locationToken)] {
             switch change {
@@ -2026,17 +2142,20 @@ private struct PairingResponse: Decodable {
 }
 
 private struct RelayError: Decodable { let message: String? }
+private struct RelayErrorCode: Decodable { let error: String? }
 
 private enum PushNotificationError: LocalizedError {
     case permissionDenied
     case tokenTimeout
     case tokenRequestPending
+    case tokenProofTimeout
     case relay(String)
     var errorDescription: String? {
         switch self {
         case .permissionDenied: return AppLocalization.string("Allow notifications in Settings to continue.")
         case .tokenTimeout: return AppLocalization.string("Apple didn't return a push token in time. Check your connection and try again.")
         case .tokenRequestPending: return AppLocalization.string("Still waiting for a push token from Apple. Try again in a moment.")
+        case .tokenProofTimeout: return AppLocalization.string("The push relay's check didn't reach this iPhone in time. Check your connection and try again.")
         case .relay(let message): return message
         }
     }

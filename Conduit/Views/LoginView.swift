@@ -212,6 +212,16 @@ enum AuthWebViewNavigationPolicy {
         }
         return .allow
     }
+
+    /// Whether a finished page is the dashboard past its sign-in, where the
+    /// session cookie can mint a ticket: on the dashboard's origin and not a
+    /// sign-in page there (Hermes' /login, or an auth proxy's own page such
+    /// as oauth2-proxy's /oauth2/sign_in), which the user hasn't got past.
+    static func isSignedInDashboardPage(_ url: URL?, expectedDashboardURL: URL?) -> Bool {
+        guard let url, let expectedDashboardURL,
+              ConnectionURLPolicy.originMatches(url, expected: expectedDashboardURL) else { return false }
+        return !DashboardSignInRedirect.isSignInPath(url.path)
+    }
 }
 
 // MARK: - Auth WebView
@@ -238,26 +248,31 @@ struct AuthWebView: UIViewRepresentable {
     /// detail text (e.g. `payload["error"]`), so it is never rendered — the
     /// login card shows only the fixed copy for the classification.
     let onError: (ConnectionFailure, String) -> Void
+    /// The page asked for a passkey, which iOS refuses in this WebView
+    /// (AuthWebPasskeyDetector). Nil installs no detector.
+    var passkeyRequested: (() -> Void)? = nil
+
+    /// Runs `action` each time the page asks for a passkey.
+    func onPasskeyRequest(_ action: @escaping () -> Void) -> AuthWebView {
+        var copy = self
+        copy.passkeyRequested = action
+        return copy
+    }
 
     func makeUIView(context: Context) -> WKWebView {
         let normalized = try? ConnectionURLPolicy.normalizedBaseURL(url)
         let config = WKWebViewConfiguration()
         config.websiteDataStore = DashboardCookiePersistence.webKitStore(for: websiteDataStoreIdentifier)
-        config.userContentController.add(context.coordinator, name: "ticket")
-        if let normalized,
-           let script = cloudflareAccess?.fetchInjectionUserScript(expectedBaseURL: normalized),
-           !script.isEmpty {
-            config.userContentController.addUserScript(
-                WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true)
-            )
+        config.userContentController.add(context.coordinator, contentWorld: DashboardScriptWorld.world, name: "ticket")
+        if passkeyRequested != nil {
+            AuthWebPasskeyDetector.install(into: config.userContentController, handler: context.coordinator)
         }
         if let normalized {
-            let script = CustomHeaderStore.shared.fetchInjectionUserScript(expectedBaseURL: normalized)
-            if !script.isEmpty {
-                config.userContentController.addUserScript(
-                    WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true)
-                )
-            }
+            DashboardScriptWorld.installProxyHeaderScripts(
+                into: config.userContentController,
+                cloudflareAccess: cloudflareAccess,
+                normalizedBaseURL: normalized
+            )
         }
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -307,13 +322,20 @@ struct AuthWebView: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "ticket")
+        uiView.configuration.userContentController.removeScriptMessageHandler(
+            forName: "ticket",
+            contentWorld: DashboardScriptWorld.world
+        )
+        // Unconditional on purpose: removing a handler that was never added
+        // is a no-op, so this doesn't have to repeat makeUIView's condition.
+        AuthWebPasskeyDetector.uninstall(from: uiView.configuration.userContentController)
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
 
+    @MainActor
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let parent: AuthWebView
         private var hasDeliveredTicket = false
@@ -334,8 +356,7 @@ struct AuthWebView: UIViewRepresentable {
             // flow, then a non-login route can use its HttpOnly session cookie
             // to mint a one-time WebSocket ticket.
             guard let expectedURL,
-                  ConnectionURLPolicy.originMatches(webView.url, expected: expectedURL),
-                  !(webView.url?.path.contains("/login") ?? true) else { return }
+                  AuthWebViewNavigationPolicy.isSignedInDashboardPage(webView.url, expectedDashboardURL: expectedURL) else { return }
             hasPinnedDashboardOrigin = true
             authenticatedWebView = webView
             let js = """
@@ -361,10 +382,14 @@ struct AuthWebView: UIViewRepresentable {
             })();
             true;
             """
-            webView.evaluateJavaScript(js)
+            webView.evaluateJavaScript(js, in: nil, in: DashboardScriptWorld.world, completionHandler: nil)
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if AuthWebPasskeyDetector.isPasskeyRequest(name: message.name, worldName: message.world.name, body: message.body) {
+                parent.passkeyRequested?()
+                return
+            }
             guard message.name == "ticket", let rawMessage = message.body as? String,
                   message.frameInfo.isMainFrame,
                   let expectedURL,

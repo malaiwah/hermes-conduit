@@ -106,6 +106,7 @@ struct LoginAddressStep: View {
                 }
             }
         }
+        .loginReadableWidth()
         .padding(.horizontal, 16)
         .padding(.top, context == .addSheet ? 12 : 0)
         .padding(.bottom, 12)
@@ -383,6 +384,7 @@ struct LoginCredentialsPage: View {
                 }
             }
         }
+        .loginReadableWidth()
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .padding(.bottom, 12)
@@ -617,6 +619,7 @@ struct LoginDashboardsScreen: View {
                     .multilineTextAlignment(.center)
             }
         }
+        .loginReadableWidth()
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
     }
@@ -984,13 +987,16 @@ struct LoginFailureCard: View {
             }
             if failure.offersRecoveryActions {
                 AdaptiveStack(spacing: 8) {
-                    Button(AppLocalization.string("Try Again")) {
+                    // A dashboard whose sign-in ended (an auth proxy whose
+                    // session expired, Hermes' own sign-in) is retried by
+                    // signing in again: the retry opens that sign-in.
+                    Button(failure.asksToSignInAgain ? AppLocalization.string("Sign In Again") : AppLocalization.string("Try Again")) {
                         Haptics.selection()
                         Task { await flow.retry() }
                     }
                     .buttonStyle(LoginCapsuleButtonStyle(prominent: true))
                     .disabled(flow.isWorking)
-                    .accessibilityIdentifier("login.error.try-again")
+                    .accessibilityIdentifier(failure.asksToSignInAgain ? "login.error.sign-in-again" : "login.error.try-again")
 
                     if let destination = failure.helpDestination {
                         Button(AppLocalization.string("Troubleshoot Connection")) {
@@ -1058,7 +1064,27 @@ struct LoginCapsuleButtonStyle: ButtonStyle {
     }
 }
 
+/// A sign-in screen's column on a wide screen (an iPad, a wide window): a
+/// readable width in the middle rather than edge to edge, as wide as the
+/// cards Hermes shows in a chat at the default text size. It grows with the
+/// text size, as UIKit's readable content guide does. An iPhone is
+/// narrower, so it never applies there.
+private struct LoginReadableWidth: ViewModifier {
+    @ScaledMetric(relativeTo: .body) private var maxWidth: CGFloat = 560
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: maxWidth)
+            .frame(maxWidth: .infinity)
+    }
+}
+
 extension View {
+    /// A sign-in screen's column: see `LoginReadableWidth`.
+    func loginReadableWidth() -> some View {
+        modifier(LoginReadableWidth())
+    }
+
     /// A sign-in field: a quiet rounded well that turns gold while focused.
     func loginFieldChrome(isFocused: Bool, trailingPadding: CGFloat = 14) -> some View {
         self
@@ -1174,6 +1200,7 @@ struct LoginFlowPresentations: ViewModifier {
                         flow.browserFailed(classifiedFailure, detail: detail)
                     }
                 )
+                .explainingPasskeys()
             }
     }
 }

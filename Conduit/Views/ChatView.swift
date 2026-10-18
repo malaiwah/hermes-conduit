@@ -419,7 +419,8 @@ struct ChatView: View {
                     isBusy: appState.isBusy,
                     author: appState.activeProfile,
                     currentToolName: runningToolName,
-                    turnStartedAt: turnStartedAt
+                    turnStartedAt: turnStartedAt,
+                    repliesElsewhere: appState.activeChatRepliesElsewhere
                 )
 
                 if let pending = livePendingComposerSend {
@@ -509,6 +510,17 @@ struct ChatView: View {
             .task(id: appState.chatResumeRestorationRequest?.generation) {
                 guard let request = appState.chatResumeRestorationRequest else { return }
                 await runViewportRestoration(request)
+            }
+            // The same chat open on another device: a turn that went quiet
+            // here, or one the other device ran, is checked against the
+            // live registry while this chat shows. Each turn edge checks at
+            // once.
+            .task(id: "\(appState.activeSessionId ?? "")|\(appState.isBusy)|\(scenePhase == .active)|\(appState.showSidebar)") {
+                guard scenePhase == .active, !appState.showSidebar else { return }
+                while !Task.isCancelled {
+                    await appState.openChatSyncTick()
+                    try? await Task.sleep(for: .seconds(5))
+                }
             }
             .onPreferenceChange(ChatRenderedScrollContentPreferenceKey.self) { value in
                 guard let value else { return }
@@ -727,7 +739,10 @@ private final class ChatScrollEventRouter {
             identity: appState.activeChatScrollSessionIdentity
         ) else { return }
         guard let snapshot = engine.renderedViewportSnapshot()?.snapshot else { return }
-        appState.recordChatViewport(snapshot, for: sessionKey)
+        // Saved once the reader stops scrolling (recordViewport).
+        appState.recordChatViewport(snapshot, for: sessionKey) { [weak engine] in
+            engine?.isUserScrolling ?? false
+        }
     }
 
     private func scrollWithoutAnimation(_ body: (ScrollViewProxy) -> Void) {
@@ -903,6 +918,7 @@ struct MessageBubble: View, Equatable {
     @Environment(\.chatRowActions) private var rowActions
     /// Acted on, not observed: what a row shows comes from `rowState`.
     private var appState: AppState { rowActions.required }
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         let _ = TranscriptPerf.note(.settledBubbleBody)
@@ -918,11 +934,21 @@ struct MessageBubble: View, Equatable {
                 )
             }
         case .assistant:
-            AssistantBubble(
-                message: message,
-                readAloudController: appState.messageReadAloudController,
-                gatewayResolver: gatewayResolver
-            )
+            if let note = VoiceJobLinkNote(text: message.content) {
+                // A saved call's job or chat line: a card that opens it. Not a
+                // reply, so it has no read-aloud or reaction controls.
+                VoiceJobLinkCard(note: note, timestamp: message.timestamp) {
+                    openURL(note.link.url)
+                }
+                .frame(maxWidth: 560, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                AssistantBubble(
+                    message: message,
+                    readAloudController: appState.messageReadAloudController,
+                    gatewayResolver: gatewayResolver
+                )
+            }
         case .reasoning:
             if let step {
                 ChatStepRow(message: message, placement: step)
@@ -940,10 +966,18 @@ struct MessageBubble: View, Equatable {
             } else if let tool = message.tool, case let cards = RichCard.cards(for: tool), !cards.isEmpty {
                 // Maps and places Hermes showed (conduit_show): drawn from
                 // the call's saved answer, so they come back with the chat,
-                // whatever the tool-progress setting.
-                RichCardsView(cards: cards)
-                    .frame(maxWidth: 560, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // whatever the tool-progress setting. A live card shows
+                // only where it was last brought up to date.
+                let current = RichCard.current(cards, row: message.id, latestLiveRows: rowState.latestLiveRows)
+                Group {
+                    if current.isEmpty {
+                        RichLiveUpdatedLine(title: cards.first?.title)
+                    } else {
+                        RichCardsView(cards: current)
+                    }
+                }
+                .frame(maxWidth: 560, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             } else if let step {
                 ChatStepRow(message: message, placement: step)
             } else {
@@ -3412,6 +3446,8 @@ struct ChatLiveTurnRows: View {
     var currentToolName: String?
     /// When the turn began, for the working line's timer.
     var turnStartedAt: Date?
+    /// Another device is getting this chat's reply.
+    var repliesElsewhere = false
 
     var body: some View {
         // Live reasoning renders from the projection, not the settled
@@ -3440,11 +3476,12 @@ struct ChatLiveTurnRows: View {
             .id("streaming")
         }
 
-        if isBusy && projection.streamingText.isEmpty {
+        if (isBusy && projection.streamingText.isEmpty) || repliesElsewhere {
             ChatWorkingLine(
                 currentToolName: currentToolName,
                 isThinking: projection.reasoningSegment != nil,
-                startedAt: turnStartedAt
+                startedAt: turnStartedAt,
+                repliesElsewhere: repliesElsewhere
             )
             .id("typing")
         }

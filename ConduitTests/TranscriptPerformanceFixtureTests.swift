@@ -478,8 +478,10 @@ final class TranscriptPerformanceFixtureTests: XCTestCase {
         // a genuinely consulted gate under the churned preference — not a
         // pruned subtree. (A streaming tick no longer serves: live text
         // publishes on `LiveTurnProjection`, which only the live rows
-        // observe.)
-        appState.objectWillChange.send()
+        // observe. Nor does a bare publish: rows redraw only when their
+        // `ChatRowState` changes, so this one changes a value every row
+        // reads and no row's content.)
+        appState.bumpVoiceCallChatLinksRevisionForTesting()
         host.view.setNeedsLayout()
         host.view.layoutIfNeeded()
 

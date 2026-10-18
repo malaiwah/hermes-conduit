@@ -253,8 +253,12 @@ struct V2ChatsView: View, Equatable {
     @StateObject private var updates: V2ShownUpdates
     @Environment(\.v2Shell) private var shell
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State private var searchText = ""
     @FocusState private var searchFocused: Bool
+    /// Hermes' full-text search behind the field, for chats whose messages
+    /// match ("In messages").
+    @StateObject private var contentSearch = SessionContentSearchModel()
     @State private var showArchivedSessions = false
     @State private var showProjectCreator = false
     @State private var sessionPendingDeletion: SessionSummary?
@@ -265,11 +269,35 @@ struct V2ChatsView: View, Equatable {
     @State private var repairContext: ConnectionRepairContext?
     /// The last activation the reveal served (NestRevealLatch).
     @State private var revealLatch = NestRevealLatch()
-    @AppStorage("conduit.sessionPresentation") private var sessionPresentationRaw = "sessions"
-    @AppStorage("conduit.v2.sessionFilter") private var filterRaw = "all"
+    // Saved settings, read and written through `updates` so the list
+    // under a chat stays still when anything else writes to the defaults.
+    static let presentationKey = "conduit.sessionPresentation"
+    static let filterKey = "conduit.v2.sessionFilter"
     /// Expanded parents, remembered per parent across launches.
-    @AppStorage("conduit.v2.expandedNests") private var expandedNestsRaw = ""
-    @AppStorage(V2MainButtonPreference.key) private var mainButtonNewChat = V2MainButtonPreference.defaultValue
+    static let expandedNestsKey = "conduit.v2.expandedNests"
+
+    private var sessionPresentationRaw: String {
+        get { updates.defaults.string(forKey: Self.presentationKey) ?? "sessions" }
+        nonmutating set { updates.set(newValue, forKey: Self.presentationKey) }
+    }
+
+    private var filterRaw: String {
+        get { updates.defaults.string(forKey: Self.filterKey) ?? "all" }
+        nonmutating set { updates.set(newValue, forKey: Self.filterKey) }
+    }
+
+    private var expandedNestsRaw: String {
+        get { updates.defaults.string(forKey: Self.expandedNestsKey) ?? "" }
+        nonmutating set { updates.set(newValue, forKey: Self.expandedNestsKey) }
+    }
+
+    private var projectChats: ProjectChatsInChats {
+        ProjectChatsInChats.stored(updates.defaults.string(forKey: ProjectChatsInChats.key))
+    }
+
+    private var mainButtonNewChat: Bool {
+        updates.defaults.object(forKey: V2MainButtonPreference.key) as? Bool ?? V2MainButtonPreference.defaultValue
+    }
     /// Parsed once per change of the store, not once per parent row.
     @State private var expansionCache = V2NestExpansionCache()
     /// A conversation opened from elsewhere whose closed section still has
@@ -284,7 +312,10 @@ struct V2ChatsView: View, Equatable {
 
     init(appState: AppState) {
         self.appState = appState
-        _updates = StateObject(wrappedValue: V2ShownUpdates(appState))
+        _updates = StateObject(wrappedValue: V2ShownUpdates(appState, defaultsKeys: [
+            Self.presentationKey, Self.filterKey, Self.expandedNestsKey, V2MainButtonPreference.key,
+            ProjectChatsInChats.key,
+        ]))
     }
 
     /// Redrawn by its own changes only; the shell redraws on every publish.
@@ -349,7 +380,13 @@ struct V2ChatsView: View, Equatable {
         .environmentObject(updates)
         .toolbar(.hidden, for: .navigationBar)
         .navigationTitle(V2Tab.chats.title)
-        .onChange(of: isShown, initial: true) { _, shown in updates.isShown = shown }
+        .onChange(of: isShown, initial: true) { _, shown in
+            updates.isShown = shown
+            // Anything over the list (a chat, a page, another tab) puts the
+            // keyboard away and keeps the search: SwiftUI otherwise hands
+            // focus back to the field on the way back, over the results.
+            if !shown { searchFocused = false }
+        }
         // Here rather than on the chats list, so an activation that arrives
         // while Projects is shown still opens its section on the way back.
         .onChange(of: appState.activeSessionId) { _, active in
@@ -392,9 +429,14 @@ struct V2ChatsView: View, Equatable {
         .task(id: "\(appState.activeProfile)|\(isShown)|\(appState.showSidebar)") {
             guard isShown, appState.showSidebar else { return }
             while !Task.isCancelled {
-                await appState.refreshLiveSessionStatuses()
+                await appState.chatListPollTick()
                 try? await Task.sleep(for: .seconds(4))
             }
+        }
+        // Back in the app over the list: it reads the catalog again if its
+        // last read is old (a chat started elsewhere meanwhile).
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, isShown, appState.showSidebar { appState.chatListBecameActive() }
         }
         .sheet(item: $projectPendingRename) { project in
             RenameSheet(
@@ -608,10 +650,12 @@ struct V2ChatsView: View, Equatable {
 
     private func filterRows(_ selection: V2FilterSelection, searching: Bool) -> [SessionSummary] {
         guard !selection.isEmpty else {
+            // Read once, not once per row.
+            let projectChats = self.projectChats
             return V2ChatsView.allRows(
                 sourceRows(nil),
                 searching: searching,
-                inMainList: mainListShows
+                inMainList: { mainListShows($0, projectChats: projectChats) }
             )
         }
         return selection.rows(
@@ -633,12 +677,15 @@ struct V2ChatsView: View, Equatable {
     }
 
     /// A project's conversations live on its page, not in the main list;
-    /// a pinned one stays, since pinning asks for it here. The catalog
-    /// carries no folder, so this hides the conversations the project tree
-    /// is known to hold.
-    private func mainListShows(_ session: SessionSummary) -> Bool {
+    /// a pinned one stays, since pinning asks for it here, and Settings can
+    /// list the recent ones or all of them too, by the row's own activity
+    /// (a nest's newer call doesn't count). The catalog carries no folder,
+    /// so this hides the conversations the project tree is known to hold.
+    private func mainListShows(_ session: SessionSummary, projectChats: ProjectChatsInChats) -> Bool {
         guard appState.supportsProjects else { return true }
-        return appState.isSessionPinned(session) || appState.knownProjectID(for: session) == nil
+        return appState.isSessionPinned(session)
+            || appState.knownProjectID(for: session) == nil
+            || projectChats.shows(lastActivity: session.lastActivityAt)
     }
 
     /// What All lists. A search looks through every chat, a project's
@@ -664,10 +711,11 @@ struct V2ChatsView: View, Equatable {
         return rows.filter { sessionMatches($0, query: query) }
     }
 
-    /// While searching, a project's chat names its project, since the main
-    /// list doesn't otherwise say where it lives.
-    private func searchProjectTitle(_ item: V2ChatsListItem) -> String? {
-        guard isSearching, case .session(let node) = item.kind else { return nil }
+    /// A project's chat names its project while searching or filtering,
+    /// or when Settings lists project chats here, since the main list
+    /// doesn't otherwise say where it lives.
+    private func rowProjectTitle(_ item: V2ChatsListItem, namesProjects: Bool) -> String? {
+        guard namesProjects, case .session(let node) = item.kind else { return nil }
         return projectTitle(for: node.session)
     }
 
@@ -685,6 +733,33 @@ struct V2ChatsView: View, Equatable {
 
     private var isSearching: Bool {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// What the content search follows: the query, and where it goes.
+    private var contentSearchKey: String {
+        let bridge = appState.dashboardTicketBridge.map { String(describing: ObjectIdentifier($0)) } ?? "-"
+        return [showingProjects ? "" : searchText, appState.activeProfile, String(appState.isConnected), bridge]
+            .joined(separator: "\u{1F}")
+    }
+
+    private func updateContentSearch() {
+        contentSearch.update(
+            query: showingProjects ? "" : searchText,
+            context: appState.sessionContentSearchContext
+        )
+    }
+
+    /// Chats whose messages match and the list above (`displayed`) doesn't
+    /// already show. Under a filter, only chats that filter lists.
+    private func contentSearchRows(_ displayed: [SessionSummary]) -> [SessionContentSearchRow] {
+        guard isSearching, !contentSearch.hits.isEmpty else { return [] }
+        let known = appState.activeProfileSessions + appState.activeProfileCronSessions
+        return SessionContentSearch.rows(
+            hits: contentSearch.hits,
+            listed: displayed,
+            known: known,
+            allowed: selection.isEmpty ? nil : filterRows(selection, searching: true)
+        )
     }
 
     private func nestedSections(_ displayed: [SessionSummary]) -> (pinned: [SessionNesting.Node], recent: [SessionNesting.Node]) {
@@ -730,10 +805,11 @@ struct V2ChatsView: View, Equatable {
         // Worked out once per render: the rows walk the whole catalog.
         let displayed = displayedSessions
         let sections = nestedSections(displayed)
+        let contentRows = contentSearchRows(displayed)
         let expanded = expandedNestIDs
         let layout = SidebarOfflineLayout.visibility(
             showingProjects: false,
-            displayedSessionsEmpty: displayed.isEmpty,
+            displayedSessionsEmpty: displayed.isEmpty && contentRows.isEmpty,
             isLoadingList: appState.isLoadingChatList
         )
         return List {
@@ -767,7 +843,7 @@ struct V2ChatsView: View, Equatable {
                     .listRowSeparator(.hidden)
             }
 
-            if layout.emptyState {
+            if layout.emptyState && !contentSearch.isSearching {
                 // Only a catalog Hermes answered says "No Sessions": right
                 // after a sign-in the list is empty until its first read
                 // lands, and a failed read says it failed.
@@ -798,6 +874,16 @@ struct V2ChatsView: View, Equatable {
                     collapsibleSection(group.section, nodes: group.nodes, expanded: expanded)
                 }
             }
+
+            if layout.liveSections && (!contentRows.isEmpty || contentSearch.isSearching) {
+                Section {
+                    ForEach(contentRows) { row in
+                        contentSearchRow(row)
+                    }
+                } header: {
+                    contentSearchHeader
+                }
+            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -811,6 +897,7 @@ struct V2ChatsView: View, Equatable {
             revealActiveNestAncestors()
             revealActiveSection()
         }
+        .onChange(of: contentSearchKey, initial: true) { _, _ in updateContentSearch() }
         .onChange(of: appState.activeSessionId) { _, _ in revealActiveNestAncestors() }
         .onChange(of: displayed) { _, _ in
             revealActiveNestAncestors()
@@ -946,6 +1033,61 @@ struct V2ChatsView: View, Equatable {
             .accessibilityAddTraits(.isHeader)
     }
 
+    /// "In messages", with a spinner while Hermes is still searching.
+    private var contentSearchHeader: some View {
+        HStack(spacing: 6) {
+            sectionHeader(AppLocalization.string("In messages"))
+                .fixedSize()
+            if contentSearch.isSearching {
+                ProgressView()
+                    .controlSize(.mini)
+                    .accessibilityLabel(AppLocalization.string("Searching messages"))
+            }
+            Spacer(minLength: 0)
+        }
+        .listRowInsets(EdgeInsets())
+    }
+
+    /// A chat Hermes found by its messages: its title, then the matching
+    /// line with the match picked out. A listed chat keeps its row actions.
+    @ViewBuilder
+    private func contentSearchRow(_ row: SessionContentSearchRow) -> some View {
+        let button = Button {
+            Haptics.light()
+            appState.dismissSidebarDrawer()
+            if row.session != nil {
+                appState.requestOpenSession(row.openID)
+            } else {
+                // Older than any listed row: the link route opens it and
+                // refreshes the list, as a job link does.
+                appState.openAppLink(.session(id: row.openID))
+            }
+        } label: {
+            V2ContentMatchRow(
+                title: row.title,
+                time: row.session?.updatedLabel ?? "",
+                snippet: row.hit.snippet,
+                isUnread: row.session.map { appState.isSessionUnread($0) } ?? false,
+                isSelected: row.openID == appState.activeSessionId
+            )
+        }
+        .buttonStyle(.plain)
+        if let session = row.session {
+            button
+                .accessibilityHint(AppLocalization.string("Swipe or touch and hold for conversation actions."))
+                .v2ListRow()
+                .sessionActions(
+                    appState: appState,
+                    session: session,
+                    nest: nil,
+                    onRename: { sessionPendingRename = session },
+                    onDelete: { sessionPendingDeletion = session }
+                )
+        } else {
+            button.v2ListRow()
+        }
+    }
+
     /// "Search Home" names the profile the list belongs to.
     private var searchPrompt: String {
         if showingProjects { return AppLocalization.string("Search projects") }
@@ -1052,10 +1194,13 @@ struct V2ChatsView: View, Equatable {
 
     /// One List row per item, so the List builds only the rows on screen.
     private func listRows(_ items: [V2ChatsListItem]) -> some View {
-        ForEach(items) { item in
+        // Read once, not once per row. A search or a filter looks through
+        // project chats whatever the setting, so it names them too.
+        let namesProjects = isSearching || !selection.isEmpty || projectChats != .hidden
+        return ForEach(items) { item in
             V2ChatsRow(
                 item: item,
-                projectTitle: searchProjectTitle(item),
+                projectTitle: rowProjectTitle(item, namesProjects: namesProjects),
                 onRename: { sessionPendingRename = $0 },
                 onDelete: { sessionPendingDeletion = $0 },
                 setExpanded: setExpanded
@@ -1317,7 +1462,7 @@ private struct V2ChatsRow: View {
     private var appState: AppState { updates.appState }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: V2ChatsListItem
-    /// The project a search result sits in, named before its preview.
+    /// The project a listed project chat sits in, named before its preview.
     let projectTitle: String?
     let onRename: (SessionSummary) -> Void
     let onDelete: (SessionSummary) -> Void

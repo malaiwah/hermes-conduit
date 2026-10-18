@@ -399,7 +399,15 @@ final class ChatScrollEngine: ObservableObject {
             setMode(.following)
         }
         emit(.persistSnapshot(renderedSessionKey))
-        emit(.flushPersistence)
+        // A fling saves once it comes to rest (`isUserScrolling`).
+        if surface?.isDecelerating != true {
+            emit(.flushPersistence)
+        }
+    }
+
+    /// A finger on the chat, or a fling still moving it.
+    var isUserScrolling: Bool {
+        isDragging || surface?.isTracking == true || surface?.isDecelerating == true
     }
 
     // MARK: - Opening and closing rows

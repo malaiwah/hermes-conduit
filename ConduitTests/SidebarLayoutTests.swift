@@ -180,6 +180,47 @@ final class SidebarLayoutTests: XCTestCase {
         XCTAssertEqual(sent, 0)
     }
 
+    /// SwiftUI redraws every `@AppStorage` view on any defaults write, and a
+    /// chat saves its scroll position there: the list reads its settings
+    /// through the gate, which passes on only its own keys' changes, and
+    /// only while the list shows.
+    @MainActor
+    func testChatsListRedrawsOnlyForItsOwnSettingsAndOnlyWhileShown() {
+        let state = makeAppState()
+        let suite = "SidebarLayoutTests.listDefaults.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let updates = V2ShownUpdates(state, defaults: defaults, defaultsKeys: ["list.filter"])
+        var sent = 0
+        let watch = updates.objectWillChange.sink { sent += 1 }
+        defer { watch.cancel() }
+
+        defaults.set(Data([1, 2, 3]), forKey: "conduit.chatResume.v1")
+        settle()
+        XCTAssertEqual(sent, 0, "another key's write redrew the list")
+
+        updates.set("scheduled", forKey: "list.filter")
+        XCTAssertEqual(sent, 1, "the list's own write redraws it at once")
+        settle()
+        XCTAssertEqual(sent, 1, "the write's notification redrew the list again")
+
+        // A write from elsewhere arrives through the notification.
+        defaults.set("all", forKey: "list.filter")
+        settle()
+        XCTAssertEqual(sent, 2)
+
+        updates.isShown = false
+        defaults.set("scheduled", forKey: "list.filter")
+        settle()
+        XCTAssertEqual(sent, 2)
+        updates.isShown = true
+        XCTAssertEqual(sent, 3)
+    }
+
+    private func settle() {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+    }
+
     @MainActor
     private func makeAppState() -> AppState {
         let suite = "SidebarLayoutTests.\(UUID().uuidString)"

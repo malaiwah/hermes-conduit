@@ -4,7 +4,8 @@
 //
 //  A live call whose sheet was swiped away keeps running. This bar sits
 //  above the composer while it does: tap it or swipe it up to bring the
-//  sheet back, or mute or end the call from here.
+//  sheet back, or mute or end the call from here. A reply being read aloud
+//  shows its player here too (#759).
 //
 
 import SwiftUI
@@ -13,6 +14,14 @@ struct MinimisedLiveVoiceBar: View {
     @EnvironmentObject var appState: AppState
 
     var body: some View {
+        VStack(spacing: 0) {
+            callBar
+            ReadAloudPlayerBar(controller: appState.messageReadAloudController)
+        }
+    }
+
+    @ViewBuilder
+    private var callBar: some View {
         switch appState.minimisedLiveVoice {
         case .geminiLive?:
             GeminiLiveBarContent(controller: appState.geminiLiveController, jobs: appState.voiceBackgroundJobSupervisor, name: "Gemini Live")

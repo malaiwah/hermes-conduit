@@ -186,11 +186,14 @@ struct ChatWorkingLine: View {
     let isThinking: Bool
     /// When the turn began; nil hides the timer.
     var startedAt: Date?
+    /// Another device is getting the reply (it took the chat's stream).
+    var repliesElsewhere = false
     @Environment(\.chatRowState) private var rowState
     @ObservedObject private var appLanguage = AppLanguageStore.shared
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var phrase: String {
+        if repliesElsewhere { return AppLocalization.string("Replying on another device") }
         if let currentToolName {
             return ChatStepStyle(toolName: currentToolName).runningTitle
         }

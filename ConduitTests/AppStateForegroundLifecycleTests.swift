@@ -356,6 +356,306 @@ final class AppStateForegroundLifecycleTests: XCTestCase {
         box.client.disconnect()
     }
 
+    // MARK: - One chat on two devices (ChatSync.swift)
+
+    /// What the server holds for "stored-a", and the clock the open chat's
+    /// checks read.
+    private final class TwoDeviceServer {
+        var rows: [[String: Any]] = [
+            ["id": "1", "role": "user", "content": "Question", "timestamp": "1"],
+        ]
+        var live: [LiveSessionStatus] = []
+        /// What the registry answers on a given probe (1-based), else `live`.
+        var liveOnProbe: [Int: [LiveSessionStatus]] = [:]
+        var probes = 0
+        var resumes = 0
+        var transcriptReads = 0
+        var sends = 0
+        /// The dashboard has no bounded history read (a v0.19 gateway).
+        var transcriptUnavailable = false
+        var now = Date(timeIntervalSince1970: 3_000_000)
+
+        var payload: [String: Any] {
+            [
+                "messages": rows,
+                "pagination": ["limit": 120, "offset": 0, "order": "latest", "returned": rows.count],
+            ]
+        }
+    }
+
+    private func twoDeviceHarness(_ server: TwoDeviceServer) -> (
+        appState: AppState,
+        coordinator: ChatResumeCoordinator,
+        store: ChatResumeStore,
+        recoverySequence: ChatResumeRecoverySequence
+    ) {
+        let active = session("stored-a")
+        let harness = makeHarness(
+            lifecycleOperations: ChatResumeLifecycleOperations(
+                loadCatalog: { _, _ in [active] },
+                openSession: { _, sessionID, _ in
+                    server.resumes += 1
+                    return SessionResumeResult(
+                        sessionId: sessionID,
+                        messages: [],
+                        snapshot: SessionRuntimeSnapshot(object: ["running": .bool(false)])
+                    )
+                },
+                persistedTranscript: { _, _, _ in
+                    server.transcriptReads += 1
+                    return server.transcriptUnavailable ? .unavailable : .payload(server.payload)
+                },
+                refreshContext: { _, _ in },
+                sendPrompt: { _, _, _ in
+                    server.sends += 1
+                    return .accepted
+                },
+                verifyTransportHealth: { _ in },
+                probeActiveSessions: { _ in
+                    server.probes += 1
+                    return server.liveOnProbe[server.probes] ?? server.live
+                }
+            )
+        )
+        harness.appState.chatSyncNow = { server.now }
+        return harness
+    }
+
+    private func openTwoDeviceChat(
+        _ harness: (
+            appState: AppState,
+            coordinator: ChatResumeCoordinator,
+            store: ChatResumeStore,
+            recoverySequence: ChatResumeRecoverySequence
+        )
+    ) async -> ConnectedClientBox {
+        let box = await installConnectedClient(into: harness)
+        let active = session("stored-a")
+        harness.appState.sessions = [active]
+        harness.appState.activeSessionId = active.id
+        let opened = await harness.appState.openSession(active.id)
+        XCTAssertTrue(opened)
+        harness.appState.isConnected = true
+        return box
+    }
+
+    private func tick(_ appState: AppState, after seconds: TimeInterval, _ server: TwoDeviceServer) async {
+        server.now += seconds
+        await appState.openChatSyncTick()
+        await appState.openChatSyncRead?.value
+    }
+
+    /// The overlap repro: this device sent a turn, another device sent
+    /// right after it, and Hermes streamed the merged reply there. Here the
+    /// turn went quiet. While the registry shows it running the chat says
+    /// another device is replying and never resumes (that would take the
+    /// stream back); once two snapshots show it over, one read brings the
+    /// reply and Working ends.
+    func testAQuietTurnSettlesOnlyAfterTheRegistryShowsItOver() async {
+        let server = TwoDeviceServer()
+        let harness = twoDeviceHarness(server)
+        let box = await openTwoDeviceChat(harness)
+        let appState = harness.appState
+        let resumesAtOpen = server.resumes
+        appState.handleStreamEvent(.sessionBusy(sessionId: "stored-a", busy: true))
+        XCTAssertEqual(appState.turnState, .running)
+
+        await tick(appState, after: 0, server)
+        await tick(appState, after: 10, server)
+        XCTAssertEqual(server.probes, 0, "A turn that streams normally isn't checked")
+
+        server.live = [LiveSessionStatus(
+            runtimeSessionId: "runtime-a", storedSessionId: "stored-a", status: "working",
+            messageCount: 1, preview: "MANGO **Rings of the Main: A History of the Montreal bagel"
+        )]
+        for _ in 0..<20 { // over two and a half minutes
+            await tick(appState, after: 8, server)
+        }
+        XCTAssertGreaterThan(server.probes, 0)
+        XCTAssertTrue(appState.activeChatRepliesElsewhere)
+        XCTAssertEqual(server.resumes, resumesAtOpen, "Never resumed while another device gets the reply")
+        XCTAssertEqual(appState.turnState, .running)
+
+        // The reply is done and stored.
+        server.live = [LiveSessionStatus(
+            runtimeSessionId: "runtime-a", storedSessionId: "stored-a", status: "idle", messageCount: 4
+        )]
+        server.rows += [
+            ["id": "2", "role": "user", "content": "Overlap test B: reply only with MANGO", "timestamp": "2"],
+            ["id": "3", "role": "assistant", "content": "MANGO", "timestamp": "3"],
+        ]
+        await tick(appState, after: 8, server)
+        XCTAssertEqual(server.resumes, resumesAtOpen, "One idle snapshot isn't enough")
+        await tick(appState, after: 8, server)
+
+        XCTAssertEqual(server.resumes, resumesAtOpen + 1)
+        XCTAssertEqual(appState.turnState, .idle)
+        XCTAssertFalse(appState.activeChatRepliesElsewhere)
+        XCTAssertEqual(appState.messages.last?.content, "MANGO")
+        box.client.disconnect()
+    }
+
+    /// A turn can stream nothing for minutes (a long tool, a slow model);
+    /// the registry still shows it, so nothing happens however long it
+    /// runs, and its preview is this device's own prompt.
+    func testAQuietTurnTheRegistryShowsRunningIsLeftAlone() async {
+        let server = TwoDeviceServer()
+        let harness = twoDeviceHarness(server)
+        let box = await openTwoDeviceChat(harness)
+        let appState = harness.appState
+        let resumesAtOpen = server.resumes
+        appState.handleStreamEvent(.sessionBusy(sessionId: "stored-a", busy: true))
+        server.live = [LiveSessionStatus(
+            runtimeSessionId: "runtime-a", storedSessionId: "stored-a", status: "working", preview: "Question"
+        )]
+
+        for _ in 0..<40 {
+            await tick(appState, after: 8, server)
+        }
+
+        XCTAssertEqual(server.resumes, resumesAtOpen)
+        XCTAssertEqual(server.transcriptReads, 1, "Only the open read the transcript")
+        XCTAssertEqual(appState.turnState, .running)
+        XCTAssertFalse(appState.activeChatRepliesElsewhere, "Its preview is this device's own turn")
+        box.client.disconnect()
+    }
+
+    /// A voice runtime and the chat's own can share its ids: an idle row
+    /// beside a working one doesn't settle the turn.
+    func testAQuietTurnWithAnyRowRunningIsLeftAlone() async {
+        let server = TwoDeviceServer()
+        let harness = twoDeviceHarness(server)
+        let box = await openTwoDeviceChat(harness)
+        let appState = harness.appState
+        let resumesAtOpen = server.resumes
+        appState.handleStreamEvent(.sessionBusy(sessionId: "stored-a", busy: true))
+        server.live = [
+            LiveSessionStatus(runtimeSessionId: "runtime-voice", storedSessionId: "stored-a", status: "idle"),
+            LiveSessionStatus(runtimeSessionId: "runtime-a", storedSessionId: "stored-a", status: "working"),
+        ]
+
+        for _ in 0..<10 {
+            await tick(appState, after: 8, server)
+        }
+
+        XCTAssertGreaterThan(server.probes, 2)
+        XCTAssertEqual(server.resumes, resumesAtOpen)
+        XCTAssertEqual(appState.turnState, .running)
+        box.client.disconnect()
+    }
+
+    /// One device alone: a quick turn sent here moves the registry's count,
+    /// and that is no reason to read or resume anything.
+    func testAQuickTurnSentHereReadsNothing() async {
+        let server = TwoDeviceServer()
+        let harness = twoDeviceHarness(server)
+        let box = await openTwoDeviceChat(harness)
+        let appState = harness.appState
+        let resumesAtOpen = server.resumes
+        let readsAtOpen = server.transcriptReads
+        server.live = [LiveSessionStatus(
+            runtimeSessionId: "runtime-a", storedSessionId: "stored-a", status: "idle", messageCount: 1
+        )]
+        await tick(appState, after: 0, server)
+
+        let sent = await appState.submitComposer(text: "Quick one")
+        XCTAssertTrue(sent)
+        appState.handleStreamEvent(.sessionBusy(sessionId: "stored-a", busy: true))
+        appState.handleStreamEvent(.messageComplete(sessionId: "stored-a", messageId: nil, content: "Done", reasoning: nil))
+        appState.handleStreamEvent(.sessionBusy(sessionId: "stored-a", busy: false))
+        XCTAssertEqual(appState.turnState, .idle)
+        server.live = [LiveSessionStatus(
+            runtimeSessionId: "runtime-a", storedSessionId: "stored-a", status: "idle", messageCount: 3
+        )]
+        for _ in 0..<4 {
+            await tick(appState, after: 15, server)
+        }
+
+        XCTAssertEqual(server.sends, 1)
+        XCTAssertGreaterThanOrEqual(server.probes, 4)
+        XCTAssertEqual(server.resumes, resumesAtOpen)
+        XCTAssertLessThanOrEqual(server.transcriptReads, readsAtOpen + 1, "At most the send's own freshness read")
+        box.client.disconnect()
+    }
+
+    /// On a dashboard without the bounded history read, reading another
+    /// device's turn means resuming the idle chat. The registry is asked
+    /// right before: a turn begun meanwhile calls the resume off (it would
+    /// take that turn's stream), and the read happens once it is over.
+    func testAReadThatWouldResumeWaitsForATurnBegunMeanwhile() async {
+        let server = TwoDeviceServer()
+        server.transcriptUnavailable = true
+        let harness = twoDeviceHarness(server)
+        let box = await openTwoDeviceChat(harness)
+        let appState = harness.appState
+        let resumesAtOpen = server.resumes
+        server.live = [LiveSessionStatus(
+            runtimeSessionId: "runtime-a", storedSessionId: "stored-a", status: "idle", messageCount: 1
+        )]
+        await tick(appState, after: 0, server)
+        let probesBefore = server.probes
+
+        // Another device's turn moved the count; it sends again right away.
+        server.live = [LiveSessionStatus(
+            runtimeSessionId: "runtime-a", storedSessionId: "stored-a", status: "idle", messageCount: 3
+        )]
+        server.liveOnProbe[probesBefore + 2] = [LiveSessionStatus(
+            runtimeSessionId: "runtime-a", storedSessionId: "stored-a", status: "working", messageCount: 3
+        )]
+        await tick(appState, after: 15, server)
+        XCTAssertEqual(server.probes, probesBefore + 2, "The snapshot, then the check before resuming")
+        XCTAssertEqual(server.resumes, resumesAtOpen, "No resume while a turn runs")
+        XCTAssertFalse(appState.activeChatScrollSessionIdentity.isReconciling)
+
+        // That turn is over: the next idle check reads it.
+        server.live = [LiveSessionStatus(
+            runtimeSessionId: "runtime-a", storedSessionId: "stored-a", status: "idle", messageCount: 5
+        )]
+        await tick(appState, after: 15, server)
+        XCTAssertEqual(server.resumes, resumesAtOpen + 1)
+        box.client.disconnect()
+    }
+
+    /// The PINEAPPLE repro: the chat sits idle here while another device
+    /// sends in it. Once the registry's count moves, the new rows are read
+    /// (bounded and read-only: no resume) and show here.
+    func testAnIdleChatReadsTheTurnAnotherDeviceRan() async {
+        let server = TwoDeviceServer()
+        let harness = twoDeviceHarness(server)
+        let box = await openTwoDeviceChat(harness)
+        let appState = harness.appState
+        let resumesAtOpen = server.resumes
+        let readsAtOpen = server.transcriptReads
+        server.live = [LiveSessionStatus(
+            runtimeSessionId: "runtime-a", storedSessionId: "stored-a", status: "idle", messageCount: 1
+        )]
+        await tick(appState, after: 0, server)
+        XCTAssertEqual(server.probes, 1)
+        await tick(appState, after: 5, server)
+        XCTAssertEqual(server.probes, 1, "An idle chat is checked every 15 s")
+
+        server.live = [LiveSessionStatus(
+            runtimeSessionId: "runtime-a", storedSessionId: "stored-a", status: "idle", messageCount: 3
+        )]
+        server.rows += [
+            ["id": "2", "role": "user", "content": "QA step-on test: reply only with PINEAPPLE", "timestamp": "2"],
+            ["id": "3", "role": "assistant", "content": "PINEAPPLE", "timestamp": "3"],
+        ]
+        await tick(appState, after: 10, server)
+
+        XCTAssertEqual(server.probes, 2)
+        XCTAssertEqual(server.transcriptReads, readsAtOpen + 1)
+        XCTAssertEqual(server.resumes, resumesAtOpen, "A read, not a resume")
+        XCTAssertEqual(appState.messages.map(\.content), [
+            "Question", "QA step-on test: reply only with PINEAPPLE", "PINEAPPLE",
+        ])
+        XCTAssertEqual(appState.turnState, .idle)
+
+        await tick(appState, after: 15, server)
+        XCTAssertEqual(server.transcriptReads, readsAtOpen + 1, "Nothing new: nothing read")
+        box.client.disconnect()
+    }
+
     /// Bounded wait for the coalesced streaming publish (33 ms cadence).
     private func waitForStreamingText(
         _ expected: String,
