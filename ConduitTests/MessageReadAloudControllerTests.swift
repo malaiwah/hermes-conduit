@@ -735,6 +735,92 @@ final class MessageReadAloudControllerTests: XCTestCase {
         XCTAssertEqual(controller.state, .idle, "A profile/connection change replaces the gateway and stops playback")
         XCTAssertEqual(replacement.streams.last?.cancelCount, 1)
     }
+
+    // MARK: - Player (#759)
+
+    /// Yields until the condition holds, failing after 10 s of wall clock.
+    private func waitUntil(
+        _ condition: @MainActor () -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        let deadline = Date().addingTimeInterval(10)
+        while !condition() {
+            guard Date() < deadline else {
+                XCTFail("Timed out waiting for the condition", file: file, line: line)
+                return
+            }
+            await Task.yield()
+        }
+    }
+
+    func testPlayerSpeedRetimesThePlayingReplyAndBecomesTheSetting() async {
+        let playback = MockReadAloudPlayback()
+        let gateway = MockReadAloudGateway(emitsPCM: true)
+        gateway.pauseAfterEmission = true
+        var stored: [ReadAloudSpeed] = []
+        let controller = MessageReadAloudController(
+            playback: playback,
+            gateway: gateway,
+            playbackRate: { 1.25 },
+            storeSpeed: { stored.append($0) },
+            beginBackgroundActivity: { _ in {} },
+            nowPlaying: MockReadAloudNowPlaying()
+        )
+
+        controller.toggle(messageID: "message-a", content: "Speed")
+        await waitUntil { controller.state == .playing(messageID: "message-a") }
+        XCTAssertEqual(controller.speed, .fast, "the player shows the speed the reply started at")
+        XCTAssertTrue(playback.keepsRateAdjustable, "Read Aloud streams can be retimed")
+
+        controller.setSpeed(.double)
+
+        XCTAssertEqual(playback.changedRates, [2])
+        XCTAssertEqual(stored, [.double])
+        XCTAssertEqual(controller.speed, .double)
+        controller.stop()
+    }
+
+    func testSpeedPickedWithNothingPlayingOnlySavesTheSetting() {
+        let playback = MockReadAloudPlayback()
+        var stored: [ReadAloudSpeed] = []
+        let controller = MessageReadAloudController(
+            playback: playback,
+            gateway: MockReadAloudGateway(),
+            storeSpeed: { stored.append($0) },
+            beginBackgroundActivity: { _ in {} },
+            nowPlaying: MockReadAloudNowPlaying()
+        )
+
+        controller.setSpeed(.faster)
+
+        XCTAssertTrue(playback.changedRates.isEmpty)
+        XCTAssertEqual(stored, [.faster])
+    }
+
+    func testFollowAlongTracksThePlayingReplyAndEndsWithIt() async throws {
+        let playback = MockReadAloudPlayback()
+        let gateway = MockReadAloudGateway(emitsPCM: true)
+        gateway.pauseAfterEmission = true
+        let controller = makeController(playback: playback, gateway: gateway)
+
+        controller.toggle(messageID: "message-a", content: "First sentence here. Second sentence here.")
+        let reading = try XCTUnwrap(controller.nowReading)
+        XCTAssertEqual(reading.messageID, "message-a")
+        XCTAssertEqual(reading.script.segments.map(\.text), ["First sentence here.", "Second sentence here."])
+        XCTAssertNil(controller.followAlongIndex(), "no highlight before audio plays")
+
+        await waitUntil { controller.state == .playing(messageID: "message-a") }
+        XCTAssertEqual(controller.followAlongIndex(), 0)
+        // Still streaming, so the typical pace places 3 s in the second sentence.
+        playback.playedSeconds = 3
+        XCTAssertEqual(controller.followAlongIndex(), 1)
+
+        gateway.streams.last?.releaseAppendForTest()
+        await waitUntil { controller.state == .idle }
+        XCTAssertNil(controller.nowReading)
+        XCTAssertNil(controller.followAlongIndex())
+    }
 }
 
 @MainActor
@@ -770,6 +856,15 @@ private final class MockReadAloudPlayback: SpeechPlaybackService {
     var ownershipIntent: VoiceAudioIntent = .standalonePlayback
     var playbackRate: Float = 1
     private(set) var startedRates: [Float] = []
+    var keepsRateAdjustable = false
+    private(set) var changedRates: [Float] = []
+    var playedSeconds: TimeInterval = 0
+    var receivedSeconds: TimeInterval = 0
+
+    func changeRate(_ rate: Float) {
+        changedRates.append(rate)
+        playbackRate = rate
+    }
     var startError: Error?
     var enqueueError: Error?
     /// When set, drain() suspends until stop() releases it — models audio

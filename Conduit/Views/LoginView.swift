@@ -212,6 +212,16 @@ enum AuthWebViewNavigationPolicy {
         }
         return .allow
     }
+
+    /// Whether a finished page is the dashboard past its sign-in, where the
+    /// session cookie can mint a ticket: on the dashboard's origin and not a
+    /// sign-in page there (Hermes' /login, or an auth proxy's own page such
+    /// as oauth2-proxy's /oauth2/sign_in), which the user hasn't got past.
+    static func isSignedInDashboardPage(_ url: URL?, expectedDashboardURL: URL?) -> Bool {
+        guard let url, let expectedDashboardURL,
+              ConnectionURLPolicy.originMatches(url, expected: expectedDashboardURL) else { return false }
+        return !DashboardSignInRedirect.isSignInPath(url.path)
+    }
 }
 
 // MARK: - Auth WebView
@@ -243,21 +253,13 @@ struct AuthWebView: UIViewRepresentable {
         let normalized = try? ConnectionURLPolicy.normalizedBaseURL(url)
         let config = WKWebViewConfiguration()
         config.websiteDataStore = DashboardCookiePersistence.webKitStore(for: websiteDataStoreIdentifier)
-        config.userContentController.add(context.coordinator, name: "ticket")
-        if let normalized,
-           let script = cloudflareAccess?.fetchInjectionUserScript(expectedBaseURL: normalized),
-           !script.isEmpty {
-            config.userContentController.addUserScript(
-                WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true)
-            )
-        }
+        config.userContentController.add(context.coordinator, contentWorld: DashboardScriptWorld.world, name: "ticket")
         if let normalized {
-            let script = CustomHeaderStore.shared.fetchInjectionUserScript(expectedBaseURL: normalized)
-            if !script.isEmpty {
-                config.userContentController.addUserScript(
-                    WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true)
-                )
-            }
+            DashboardScriptWorld.installProxyHeaderScripts(
+                into: config.userContentController,
+                cloudflareAccess: cloudflareAccess,
+                normalizedBaseURL: normalized
+            )
         }
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -307,13 +309,17 @@ struct AuthWebView: UIViewRepresentable {
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "ticket")
+        uiView.configuration.userContentController.removeScriptMessageHandler(
+            forName: "ticket",
+            contentWorld: DashboardScriptWorld.world
+        )
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
 
+    @MainActor
     class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         let parent: AuthWebView
         private var hasDeliveredTicket = false
@@ -334,8 +340,7 @@ struct AuthWebView: UIViewRepresentable {
             // flow, then a non-login route can use its HttpOnly session cookie
             // to mint a one-time WebSocket ticket.
             guard let expectedURL,
-                  ConnectionURLPolicy.originMatches(webView.url, expected: expectedURL),
-                  !(webView.url?.path.contains("/login") ?? true) else { return }
+                  AuthWebViewNavigationPolicy.isSignedInDashboardPage(webView.url, expectedDashboardURL: expectedURL) else { return }
             hasPinnedDashboardOrigin = true
             authenticatedWebView = webView
             let js = """
@@ -361,7 +366,7 @@ struct AuthWebView: UIViewRepresentable {
             })();
             true;
             """
-            webView.evaluateJavaScript(js)
+            webView.evaluateJavaScript(js, in: nil, in: DashboardScriptWorld.world, completionHandler: nil)
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {

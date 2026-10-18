@@ -727,7 +727,10 @@ private final class ChatScrollEventRouter {
             identity: appState.activeChatScrollSessionIdentity
         ) else { return }
         guard let snapshot = engine.renderedViewportSnapshot()?.snapshot else { return }
-        appState.recordChatViewport(snapshot, for: sessionKey)
+        // Saved once the reader stops scrolling (recordViewport).
+        appState.recordChatViewport(snapshot, for: sessionKey) { [weak engine] in
+            engine?.isUserScrolling ?? false
+        }
     }
 
     private func scrollWithoutAnimation(_ body: (ScrollViewProxy) -> Void) {
@@ -903,6 +906,7 @@ struct MessageBubble: View, Equatable {
     @Environment(\.chatRowActions) private var rowActions
     /// Acted on, not observed: what a row shows comes from `rowState`.
     private var appState: AppState { rowActions.required }
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         let _ = TranscriptPerf.note(.settledBubbleBody)
@@ -918,11 +922,21 @@ struct MessageBubble: View, Equatable {
                 )
             }
         case .assistant:
-            AssistantBubble(
-                message: message,
-                readAloudController: appState.messageReadAloudController,
-                gatewayResolver: gatewayResolver
-            )
+            if let note = VoiceJobLinkNote(text: message.content) {
+                // A saved call's job or chat line: a card that opens it. Not a
+                // reply, so it has no read-aloud or reaction controls.
+                VoiceJobLinkCard(note: note, timestamp: message.timestamp) {
+                    openURL(note.link.url)
+                }
+                .frame(maxWidth: 560, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                AssistantBubble(
+                    message: message,
+                    readAloudController: appState.messageReadAloudController,
+                    gatewayResolver: gatewayResolver
+                )
+            }
         case .reasoning:
             if let step {
                 ChatStepRow(message: message, placement: step)

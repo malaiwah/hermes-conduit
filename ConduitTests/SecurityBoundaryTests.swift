@@ -3,18 +3,23 @@ import XCTest
 @testable import Conduit
 
 final class SecurityBoundaryTests: XCTestCase {
-    func testAppTransportSecurityAllowsTailscaleCGNATRange() throws {
+    func testAppTransportSecurityAllowsLocalNetworkingAndTailscaleNames() throws {
         let appInfo = try XCTUnwrap(Bundle(identifier: "com.milim.relay")?.infoDictionary)
         let appTransportSecurity = try XCTUnwrap(
             appInfo["NSAppTransportSecurity"] as? [String: Any]
         )
+        // Exception-domain keys match host names only, so a CIDR key such as
+        // 100.64.0.0/10 is inert; plain HTTP to raw IPs depends on local
+        // networking, and MagicDNS names use the ts.net exception.
+        XCTAssertEqual(appTransportSecurity["NSAllowsLocalNetworking"] as? Bool, true)
+        XCTAssertNotEqual(appTransportSecurity["NSAllowsArbitraryLoads"] as? Bool, true)
         let exceptionDomains = try XCTUnwrap(
             appTransportSecurity["NSExceptionDomains"] as? [String: Any]
         )
-        let cgnatException = try XCTUnwrap(
-            exceptionDomains["100.64.0.0/10"] as? [String: Any]
-        )
-        XCTAssertEqual(cgnatException["NSExceptionAllowsInsecureHTTPLoads"] as? Bool, true)
+        XCTAssertEqual(Set(exceptionDomains.keys), ["ts.net"])
+        let tailnet = try XCTUnwrap(exceptionDomains["ts.net"] as? [String: Any])
+        XCTAssertEqual(tailnet["NSExceptionAllowsInsecureHTTPLoads"] as? Bool, true)
+        XCTAssertEqual(tailnet["NSIncludesSubdomains"] as? Bool, true)
     }
 
     func testRemoteDashboardMustUseHTTPSButLoopbackAndTailscaleMayUseHTTP() throws {

@@ -111,3 +111,36 @@ enum ChatListSection: String, CaseIterable, Hashable {
         }
     }
 }
+
+/// Whether the Chats list also shows the chats that live in a project,
+/// which otherwise appear only on the project's page (and in search). A
+/// listed one names its project under the title, as search does.
+enum ProjectChatsInChats: String, CaseIterable, Identifiable {
+    /// Only on the project's page, unless pinned.
+    case hidden
+    /// The ones active today or yesterday.
+    case recent
+    case all
+
+    static let key = "conduit.v2.projectChatsInChats"
+    static let defaultValue = ProjectChatsInChats.hidden
+
+    var id: String { rawValue }
+
+    static func stored(_ raw: String?) -> ProjectChatsInChats {
+        raw.flatMap(ProjectChatsInChats.init(rawValue:)) ?? defaultValue
+    }
+
+    /// Whether a project's chat with this last activity is listed. A chat
+    /// without a time isn't recent.
+    func shows(lastActivity: TimeInterval?, now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        switch self {
+        case .hidden: return false
+        case .all: return true
+        case .recent:
+            guard let lastActivity else { return false }
+            let section = ChatListSection.dateSection(for: lastActivity, now: now, calendar: calendar)
+            return section == .today || section == .yesterday
+        }
+    }
+}

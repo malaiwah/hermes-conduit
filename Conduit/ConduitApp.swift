@@ -158,6 +158,11 @@ final class ConduitAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
             completionHandler([.banner, .list, .sound])
             return
         }
+        // A step's timer from a rich card rings wherever the user is.
+        if notification.request.identifier.hasPrefix(RichStepsMemory.notificationPrefix) {
+            completionHandler([.banner, .list, .sound])
+            return
+        }
         completionHandler([])
     }
 }
@@ -228,8 +233,12 @@ struct ConduitApp: App {
             // The accent colours resolve the choice from this trait, so a
             // new pick redraws in place: no view is rebuilt.
             .environment(\.conduitAccent, accentChoice)
+            .background(WindowAccentTint(choice: accentChoice))
+            // The Watch app draws in the same accent.
+            .onChange(of: accentChoice) { _, _ in appState.shareWatchCallVoices() }
 #if DEBUG
             .modifier(WidgetLaunchUITestFixture.modifier(appState: appState))
+            .modifier(ScreenshotCallFixtureModifier(appState: appState))
 #endif
             // Links Conduit writes into chats (a voice call's job link)
             // open inside the app; every other link goes to the system.

@@ -135,7 +135,12 @@ extension AppState {
     /// connect and profile switch, and when the Watch first sends its call
     /// token.
     func refreshWatchCallVoices() async {
-        guard PushNotificationService.shared.watchVoIPToken != nil else { return }
+        // Without a call token the Watch still hears whether this host has
+        // the Conduit plugin its voices all need (watchContextVoices).
+        guard PushNotificationService.shared.watchVoIPToken != nil else {
+            shareWatchCallVoices()
+            return
+        }
         let scope = hermesCallsKey(profile: activeProfile)
         rescopeWatchCallVoices()
         guard supportsHermesCalls else {
@@ -196,16 +201,64 @@ extension AppState {
 
     /// The Watch app says what to set up when its voice can't start, and
     /// that calls then ring only the iPhone.
-    /// Also how a call ringing on the Watch names the main profile.
+    /// Also how a call ringing on the Watch names the main profile, and the
+    /// accent the Watch app draws in.
     func shareWatchCallVoices() {
         let notifications = PushNotificationService.shared
-        let voices = notifications.watchCallVoices
         WatchVoiceLink.shared.share(WatchPhoneContext(
-            voices: voices.scope == hermesCallsKey(profile: activeProfile) ? voices.ready : [:],
+            voices: Self.watchContextVoices(
+                notifications.watchCallVoices,
+                scope: hermesCallsKey(profile: activeProfile),
+                plugin: notifierPlugin.state
+            ),
             callsRing: supportsHermesCalls && notifications.voipToken != nil,
             mainProfileNames: mainProfileNamesByDashboard,
-            activeDashboardID: activeDashboardID?.uuidString
+            activeDashboardID: activeDashboardID?.uuidString,
+            accent: UserDefaults.standard.string(forKey: ConduitAccentChoice.storageKey) ?? ConduitAccentChoice.defaultChoice.rawValue
         ))
+    }
+
+    /// The Watch voices' readiness the Watch app is told: this profile's
+    /// checks, except where the host's plugin can't serve a voice at all.
+    /// Every Watch voice needs plugin routes (watchVoiceCapabilities), so a
+    /// host without the plugin (or one too old to report what it serves)
+    /// has none of them, and a plugin that reports its capabilities has
+    /// only those it lists. Such a voice is not set up whatever an earlier
+    /// check found, so a stale "ready" from before the plugin went missing
+    /// can't bring back "Runs on your Watch". A pre-0.4 plugin that did
+    /// serve Gemini Live reads as not set up too; the Watch can still try.
+    nonisolated static func watchContextVoices(
+        _ voices: WatchCallVoices,
+        scope: String,
+        plugin: NotifierPluginStatus.State
+    ) -> [String: Bool] {
+        var context = voices.scope == scope ? voices.ready : [:]
+        for voice in WatchCallVoices.Voice.allCases where !pluginCanServe(voice, plugin: plugin) {
+            context[voice.rawValue] = false
+        }
+        return context
+    }
+
+    /// Whether the plugin state leaves room for the voice's route: not asked
+    /// yet says nothing, a missing or pre-0.4 plugin serves none.
+    nonisolated private static func pluginCanServe(_ voice: WatchCallVoices.Voice, plugin: NotifierPluginStatus.State) -> Bool {
+        switch plugin {
+        case .unknown: return true
+        case .predatesCapabilities: return false
+        case .reported(_, let capabilities): return watchVoiceCapabilities(voice).allSatisfy(capabilities.contains)
+        }
+    }
+
+    /// The plugin capabilities a Watch voice needs. Gemini Live runs on the
+    /// Watch with its own route's token; GPT-Live and Grok also need the
+    /// Watch audio bridge (plugin 0.9), which WatchDirectBroker's grant
+    /// carries.
+    nonisolated static func watchVoiceCapabilities(_ voice: WatchCallVoices.Voice) -> [String] {
+        switch voice {
+        case .geminiLive: return ["gemini-live"]
+        case .gptLive: return ["gpt-live", "watch-audio"]
+        case .grokLive: return ["grok-live", "watch-audio"]
+        }
     }
 
     /// How GPT-Live asks for a call, when the host takes call watches.

@@ -1959,6 +1959,7 @@ struct CronList: View {
 
             if !jobs.isEmpty {
                 let shown = CronJobFilter.shownJobs(jobs, showAll: showAllJobs, isSearching: isSearching)
+                let zoneLabel = ProfileTimeZone.scheduleZoneLabel(profileSetting: appState.activeProfileTimeZoneSetting)
                 HStack {
                     Text("Jobs").font(.headline)
                     Spacer()
@@ -1969,7 +1970,7 @@ struct CronList: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 ForEach(shown) { job in
-                    Button { selectedJob = job } label: { CronJobRow(job: job, notifies: appState.cronJobNotifies(job)) }
+                    Button { selectedJob = job } label: { CronJobRow(job: job, notifies: appState.cronJobNotifies(job), zoneLabel: zoneLabel) }
                         .buttonStyle(.plain)
                         .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 }
@@ -2104,7 +2105,7 @@ enum CronJobFilter: String, CaseIterable, Identifiable {
     }
 
     static func matches(_ job: CronJob, query: String) -> Bool {
-        [job.displayName, job.prompt ?? "", job.scheduleDisplay ?? job.schedule?.display ?? "", job.deliver ?? ""]
+        [job.displayName, job.prompt ?? "", job.scheduleDisplay ?? job.schedule?.display ?? "", CronScheduleText.describe(job, zoneLabel: nil) ?? "", job.deliver ?? ""]
             .contains { $0.localizedCaseInsensitiveContains(query) }
     }
 
@@ -2143,6 +2144,8 @@ private struct CronJobRow: View {
     let job: CronJob
     /// Whether the job's runs notify (the host's per-job setting).
     var notifies = true
+    /// The profile zone the schedule's times are in, when not this iPhone's.
+    var zoneLabel: String? = nil
     var body: some View {
         HStack(spacing: 11) {
             Image(systemName: "clock")
@@ -2151,7 +2154,7 @@ private struct CronJobRow: View {
                 .frame(width: 30, height: 30).background((job.isActive ? Color.green : .secondary).opacity(0.13), in: Circle())
             VStack(alignment: .leading, spacing: 3) {
                 Text(job.displayName).font(.subheadline.weight(.medium)).lineLimit(1)
-                Text(job.scheduleDisplay ?? job.schedule?.display ?? job.schedule?.expr ?? AppLocalization.string("No schedule"))
+                Text(CronScheduleText.describe(job, zoneLabel: zoneLabel) ?? AppLocalization.string("No schedule"))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
@@ -2187,6 +2190,13 @@ struct CronJobDetailSheet: View {
         appState.cronJobs.first { $0.id == selectedJob.id } ?? selectedJob
     }
 
+    /// A run time as a date and time on this iPhone's clock; Hermes' raw
+    /// value when it isn't one Conduit can read.
+    private func runTime(_ raw: String?) -> String {
+        guard let raw, !raw.isEmpty else { return "—" }
+        return CronScheduleText.parseDate(raw).map { CronScheduleText.absoluteDateText($0) } ?? raw
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -2195,9 +2205,9 @@ struct CronJobDetailSheet: View {
                     VStack(alignment: .leading, spacing: 16) {
                         ConduitSettingsSection(title: job.displayName, symbol: "clock.fill", tint: .conduitAccent) {
                             SettingsMetricRow(label: AppLocalization.string("Status"), value: job.statusLabel)
-                            SettingsMetricRow(label: AppLocalization.string("Schedule"), value: job.scheduleDisplay ?? job.schedule?.display ?? job.schedule?.expr ?? "—")
-                            SettingsMetricRow(label: AppLocalization.string("Next run"), value: job.isFinished ? "—" : job.nextRunAt ?? "—")
-                            SettingsMetricRow(label: AppLocalization.string("Last run"), value: job.lastRunAt ?? "—")
+                            SettingsMetricRow(label: AppLocalization.string("Schedule"), value: CronScheduleText.describe(job, zoneLabel: ProfileTimeZone.scheduleZoneLabel(profileSetting: appState.activeProfileTimeZoneSetting)) ?? "—")
+                            SettingsMetricRow(label: AppLocalization.string("Next run"), value: job.isFinished ? "—" : runTime(job.nextRunAt))
+                            SettingsMetricRow(label: AppLocalization.string("Last run"), value: runTime(job.lastRunAt))
                             SettingsMetricRow(label: AppLocalization.string("Delivery"), value: job.deliver ?? AppLocalization.string("Local"))
                         }
                         if appState.supportsCronNotifications {

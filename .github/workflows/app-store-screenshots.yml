@@ -1,0 +1,322 @@
+name: App Store screenshots
+
+# Manual: walks the app on simulators against a real Hermes demo dashboard
+# started on the same runner (scripts/app-store/start-demo-hermes.sh) and
+# uploads the named screenshots as one artifact. Never part of the merge gate.
+
+on:
+  workflow_dispatch:
+    inputs:
+      devices:
+        description: "Simulator names, comma-separated"
+        default: "iPhone 17 Pro Max,iPad Pro 13-inch"
+      watch:
+        description: "Watch simulator name"
+        default: "Apple Watch Ultra 3"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: app-store-screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      DEVICES: ${{ inputs.devices || 'iPhone 17 Pro Max,iPad Pro 13-inch' }}
+      DEMO_HOST: hermes.tail-demo.ts.net
+      DEMO_PORT: "9119"
+      DEMO_USER: demo
+      # Not a secret: the demo dashboard lives only on this runner.
+      DEMO_PASSWORD: conduit-demo-2026
+      DEMO_WORK: ${{ github.workspace }}/demo-hermes
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Hermes and Homebrew code runs later; only the publish step gets the token.
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project-tests.yml
+
+      - name: Start the demo dashboard
+        timeout-minutes: 20
+        run: bash scripts/app-store/start-demo-hermes.sh
+
+      - name: Capture
+        timeout-minutes: 75
+        run: |
+          set -euo pipefail
+          mkdir -p shots
+          IFS=',' read -r -a NAMES <<< "$DEVICES"
+          for name in "${NAMES[@]}"; do
+            name="$(echo "$name" | xargs)"
+            udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          name = sys.argv[1]
+          runtimes = json.load(sys.stdin)["devices"]
+          ios = sorted((r for r in runtimes if "iOS" in r), reverse=True)
+          # Exact name first, then the first name starting with it (iPad
+          # names carry the chip, which changes with each Xcode).
+          for exact in (True, False):
+              for r in ios:
+                  for d in runtimes[r]:
+                      if d["name"] == name if exact else d["name"].startswith(name):
+                          print(d["udid"]); sys.exit()
+          print("available:", sorted({d["name"] for r in ios for d in runtimes[r]}), file=sys.stderr)
+          ' "$name")
+            if [ -z "$udid" ]; then echo "::error::no simulator named $name"; exit 1; fi
+            echo "== $name ($udid)"
+            xcrun simctl boot "$udid" || true
+            xcrun simctl bootstatus "$udid" -b
+            xcrun simctl status_bar "$udid" override --time 9:41 --dataNetwork wifi --wifiMode active --wifiBars 3 \
+              --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100 || true
+            slug=$(echo "$name" | tr ' ' '-' | tr -cd 'A-Za-z0-9-')
+            set +e
+            TEST_RUNNER_CONDUIT_DEMO_URL="http://$DEMO_HOST:$DEMO_PORT" \
+            TEST_RUNNER_CONDUIT_DEMO_USER="$DEMO_USER" \
+            TEST_RUNNER_CONDUIT_DEMO_PASSWORD="$DEMO_PASSWORD" \
+            perl -e 'alarm shift; exec @ARGV' 1500 xcodebuild test \
+              -project Conduit.xcodeproj -scheme Conduit \
+              -destination "id=$udid" \
+              -only-testing:ConduitScreenshots \
+              -resultBundlePath "results/$slug.xcresult" \
+              -derivedDataPath dd \
+              -enableCodeCoverage NO \
+              COMPILER_INDEX_STORE_ENABLE=NO \
+              CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+              DEVELOPMENT_TEAM="" PROVISIONING_PROFILE_SPECIFIER="" \
+              > "results-$slug.log" 2>&1
+            rc=$?
+            # The App Preview: record the screen while the preview test plays.
+            if [ "$rc" -eq 0 ]; then
+              xcrun simctl io "$udid" recordVideo --codec h264 --force "shots/preview-$slug.mov" > "record-$slug.log" 2>&1 &
+              recorder=$!
+              echo "RECORD_START $(python3 -c 'import time; print(time.time())')" > "shots/preview-$slug.marks"
+              sleep 2
+              TEST_RUNNER_CONDUIT_DEMO_URL="http://$DEMO_HOST:$DEMO_PORT" \
+              TEST_RUNNER_CONDUIT_DEMO_USER="$DEMO_USER" \
+              TEST_RUNNER_CONDUIT_DEMO_PASSWORD="$DEMO_PASSWORD" \
+              TEST_RUNNER_CONDUIT_RECORD_PREVIEW=1 \
+              perl -e 'alarm shift; exec @ARGV' 420 xcodebuild test-without-building \
+                -project Conduit.xcodeproj -scheme Conduit \
+                -destination "id=$udid" \
+                -only-testing:ConduitScreenshots/AppStoreScreenshotTests/testRecordPreview \
+                -resultBundlePath "results/$slug-preview.xcresult" \
+                -derivedDataPath dd \
+                > "results-$slug-preview.log" 2>&1
+              prc=$?
+              if [ "$prc" -ne 0 ]; then echo "$name preview recording exited $prc" >> failures.txt; fi
+              # SIGINT lets the recorder finish the file; TERM if it ignores it.
+              kill -INT "$recorder" || true
+              for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$recorder" 2>/dev/null || break; sleep 1; done
+              kill -TERM "$recorder" 2>/dev/null || true
+              wait "$recorder" || true
+              grep -E "error:|Test Case" "results-$slug-preview.log" || true
+              grep -o "PREVIEW_MARK [a-z]* [0-9.]*" "results-$slug-preview.log" >> "shots/preview-$slug.marks" || true
+              # The next device's screenshots must not show this chat.
+              preview_chats=0
+              for sid in $(HERMES_HOME="$DEMO_WORK/home" "$DEMO_WORK/venv/bin/hermes" sessions list --limit 50 \
+                  | awk '/^Packing list/ {print $NF}'); do
+                HERMES_HOME="$DEMO_WORK/home" "$DEMO_WORK/venv/bin/hermes" sessions delete -y "$sid" < /dev/null \
+                  || echo "$name preview chat $sid not removed" >> failures.txt
+                preview_chats=$((preview_chats + 1))
+              done
+              if [ "$preview_chats" -eq 0 ]; then echo "$name preview chat not found to remove" >> failures.txt; fi
+            fi
+            set -e
+            grep -E "error:|Test Case|\*\* TEST|Testing failed|Skipped" "results-$slug.log" || true
+            mkdir -p "shots/$slug"
+            xcrun xcresulttool export attachments --path "results/$slug.xcresult" --output-path "shots/$slug" || true
+            # Name the files after their attachment names.
+            if [ -f "shots/$slug/manifest.json" ]; then
+              python3 - "shots/$slug" <<'PY'
+          import json, os, sys
+          root = sys.argv[1]
+          for test in json.load(open(os.path.join(root, "manifest.json"))):
+              for a in test.get("attachments", []):
+                  src = os.path.join(root, a["exportedFileName"])
+                  name = a.get("suggestedHumanReadableName") or a["exportedFileName"]
+                  base = name.split("_")[0] if name.count("_") >= 2 else os.path.splitext(name)[0]
+                  base = "".join(c if c.isalnum() or c in "-_. " else "_" for c in base)
+                  if os.path.exists(src):
+                      os.rename(src, os.path.join(root, base + os.path.splitext(src)[1]))
+          PY
+            fi
+            xcrun simctl shutdown "$udid" || true
+            if [ "$rc" -ne 0 ]; then echo "$name capture exited $rc" >> failures.txt; fi
+          done
+          ls -lR shots
+
+      - name: Cut App Previews
+        # 30 s, 30 fps H.264 with a silent track at Apple's preview sizes,
+        # next to the raw recordings (shots/preview-<device>.mp4).
+        if: always()
+        timeout-minutes: 15
+        run: |
+          set -uo pipefail
+          command -v ffmpeg >/dev/null || brew install ffmpeg >/dev/null
+          for marks in shots/preview-*.marks; do
+            [ -f "$marks" ] || continue
+            raw="${marks%.marks}.mov"
+            case "$marks" in *iPad*) size=1200x1600 ;; *) size=886x1920 ;; esac
+            scripts/app-store/cut-preview.sh "$raw" "$marks" "${marks%.marks}.mp4" "$size" \
+              || echo "could not cut $raw" >> failures.txt
+          done
+
+      - name: Publish to a git ref
+        # Cloud sessions can't download artifacts (blob storage is blocked
+        # there) but can fetch git refs: refs/app-store-shots/<run id> holds
+        # the screenshots and small logs. Not a branch, so nothing shows in
+        # the branch list; delete old refs with git push --delete.
+        if: always()
+        run: |
+          set -euo pipefail
+          out=$(mktemp -d)
+          cp -R shots "$out/" 2>/dev/null || true
+          find "$out" -name '*.mov' -size +90M -delete
+          mkdir -p "$out/logs"
+          for f in demo-hermes/*.log results-*.log record-*.log; do
+            [ -f "$f" ] && tail -c 400000 "$f" > "$out/logs/$(basename "$f")"
+          done
+          cd "$out"
+          git init -q
+          git -c user.name=ci -c user.email=ci@localhost add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "App Store screenshots, run ${{ github.run_id }}"
+          git push -q "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" \
+            "HEAD:refs/app-store-shots/${{ github.run_id }}"
+          echo "::notice::git fetch origin refs/app-store-shots/${{ github.run_id }}"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-store-screenshots
+          path: shots
+          if-no-files-found: warn
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-store-logs
+          path: |
+            demo-hermes/*.log
+            results-*.log
+            record-*.log
+            results/
+          if-no-files-found: ignore
+
+      - name: Fail on missing screens
+        # Last, so a failed capture still publishes what it has.
+        if: always()
+        run: |
+          if [ -s failures.txt ]; then
+            while read -r line; do echo "::error::$line"; done < failures.txt
+            exit 1
+          fi
+
+  watch:
+    # The Watch app needs no dashboard: its screens come from the
+    # -conduitScreenshotCall fixture (ConduitWatch/WatchVoiceCall.swift).
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      WATCH_DEVICE: ${{ inputs.watch || 'Apple Watch Ultra 3' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Only the publish step needs the token, and it passes its own.
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build, install and capture
+        timeout-minutes: 35
+        run: |
+          set -euo pipefail
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          name = sys.argv[1]
+          runtimes = json.load(sys.stdin)["devices"]
+          watch = sorted((r for r in runtimes if "watchOS" in r), reverse=True)
+          for exact in (True, False):
+              for r in watch:
+                  for d in runtimes[r]:
+                      if d["name"] == name if exact else d["name"].startswith(name):
+                          print(d["udid"]); sys.exit()
+          print("available:", sorted({d["name"] for r in watch for d in runtimes[r]}), file=sys.stderr)
+          ' "$WATCH_DEVICE")
+          if [ -z "$udid" ]; then echo "::error::no Watch simulator named $WATCH_DEVICE"; exit 1; fi
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+          xcodebuild build \
+            -project Conduit.xcodeproj -scheme ConduitWatch \
+            -destination "id=$udid" -configuration Debug \
+            -derivedDataPath watch-dd \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" PROVISIONING_PROFILE_SPECIFIER="" \
+            > watch-build.log 2>&1 || { grep -E "error:" watch-build.log | head -20; exit 1; }
+          app=$(find watch-dd/Build/Products -name 'ConduitWatch.app' -path '*watchsimulator*' | head -1)
+          xcrun simctl install "$udid" "$app"
+          xcrun simctl status_bar "$udid" override --time 9:41 \
+            || xcrun simctl status_bar "$udid" override --time "2026-10-18T09:41:00" \
+            || echo "::warning::the Watch status bar time could not be set"
+          mkdir -p shots/watch
+          n=1
+          for state in home speaking listening; do
+            xcrun simctl terminate "$udid" com.milim.relay.watchkitapp 2>/dev/null || true
+            xcrun simctl launch "$udid" com.milim.relay.watchkitapp -conduitScreenshotCall "$state"
+            sleep 6
+            xcrun simctl io "$udid" screenshot "shots/watch/0$n-$state.png"
+            n=$((n + 1))
+          done
+          ls -l shots/watch
+
+      - name: Publish to a git ref
+        if: always()
+        run: |
+          set -euo pipefail
+          out=$(mktemp -d)
+          cp -R shots "$out/" 2>/dev/null || true
+          mkdir -p "$out/logs"
+          [ -f watch-build.log ] && tail -c 400000 watch-build.log > "$out/logs/watch-build.log"
+          cd "$out"
+          git init -q
+          git -c user.name=ci -c user.email=ci@localhost add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "App Store Watch screenshots, run ${{ github.run_id }}" --allow-empty
+          git push -q "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" \
+            "HEAD:refs/app-store-shots/${{ github.run_id }}-watch"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-store-watch-screenshots
+          path: shots
+          if-no-files-found: warn
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-store-watch-logs
+          path: watch-build.log
+          if-no-files-found: ignore

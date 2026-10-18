@@ -379,6 +379,12 @@ enum ReadAloudSpeed: Double, CaseIterable, Identifiable {
         String(format: "%gx", locale: Locale(identifier: "en_US_POSIX"), rawValue)
     }
 
+    /// The choice nearest a rate, for showing a rate that came from
+    /// elsewhere.
+    static func closest(to rate: Float) -> ReadAloudSpeed {
+        allCases.min { abs($0.rate - rate) < abs($1.rate - rate) } ?? .normal
+    }
+
     /// The stored choice; anything missing or unrecognised reads as 1x.
     static func current(defaults: UserDefaults = .standard) -> ReadAloudSpeed {
         ReadAloudSpeed(rawValue: defaults.double(forKey: preferenceKey)) ?? .normal
@@ -758,6 +764,16 @@ protocol SpeechPlaybackService: AnyObject {
     /// Whether audio is currently held by `pause()`. A stream restart (route
     /// change) clears it even though nobody resumed.
     var isPaused: Bool { get }
+    /// Builds every stream so `changeRate` can retime it while it plays
+    /// (Read Aloud's player, #759). Off for conversations, which keep the
+    /// plain graph.
+    var keepsRateAdjustable: Bool { get set }
+    /// Retimes the audio already playing as well as the next stream.
+    func changeRate(_ rate: Float)
+    /// Seconds of the current stream's source audio heard so far, and
+    /// scheduled so far (#759).
+    var playedSeconds: TimeInterval { get }
+    var receivedSeconds: TimeInterval { get }
 }
 
 extension SpeechPlaybackService {
@@ -771,6 +787,18 @@ extension SpeechPlaybackService {
     func pause() -> Bool { false }
     func resume() {}
     var isPaused: Bool { false }
+
+    /// Services that cannot retime live apply the rate from the next stream.
+    var keepsRateAdjustable: Bool {
+        get { false }
+        set {}
+    }
+
+    func changeRate(_ rate: Float) { playbackRate = rate }
+
+    /// Services that do not track position report nothing heard.
+    var playedSeconds: TimeInterval { 0 }
+    var receivedSeconds: TimeInterval { 0 }
 }
 
 @MainActor
