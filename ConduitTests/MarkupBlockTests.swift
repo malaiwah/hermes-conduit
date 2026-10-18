@@ -139,7 +139,11 @@ extension MarkdownFallbackTests {
         XCTAssertTrue(MarkupHTML.allowsNavigation(to: URL(string: "about:blank")))
         XCTAssertTrue(MarkupHTML.allowsNavigation(to: URL(string: "https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.min.js")))
         XCTAssertTrue(MarkupHTML.allowsNavigation(to: URL(string: "https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css")))
+        XCTAssertTrue(MarkupHTML.allowsNavigation(to: URL(string: "https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/fonts/KaTeX_Main-Regular.woff2")))
         XCTAssertFalse(MarkupHTML.allowsNavigation(to: URL(string: "https://cdn.jsdelivr.net/npm/other@1.0.0/index.js")))
+        XCTAssertFalse(MarkupHTML.allowsNavigation(to: URL(string: "https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.esm.min.mjs")), "only the hashed files")
+        XCTAssertFalse(MarkupHTML.allowsNavigation(to: URL(string: "https://cdn.jsdelivr.net/npm/mermaid@11.0.0/dist/mermaid.min.js")), "only the pinned version")
+        XCTAssertFalse(MarkupHTML.allowsNavigation(to: URL(string: "https://cdn.jsdelivr.net/npm/katex@0.16.2/dist/katex.min.js")))
         XCTAssertFalse(MarkupHTML.allowsNavigation(to: URL(string: "https://conduit.local/elsewhere")))
         XCTAssertFalse(MarkupHTML.allowsNavigation(to: URL(string: "https://example.com/")))
         XCTAssertFalse(MarkupHTML.allowsNavigation(to: URL(string: "http://conduit.local/")))
@@ -147,6 +151,22 @@ extension MarkdownFallbackTests {
         XCTAssertFalse(MarkupHTML.allowsNavigation(to: URL(string: "data:text/html,<p>")))
         XCTAssertFalse(MarkupHTML.allowsNavigation(to: URL(string: "file:///etc/hosts")))
         XCTAssertFalse(MarkupHTML.allowsNavigation(to: nil))
+    }
+
+    func testRendererFilesArePinnedByHash() {
+        let mermaid = MarkupHTML.page(MarkupDocument(kind: .mermaid, source: "graph TD; A-->B", light: true, fontSize: 17), presentation: .inline)
+        let math = MarkupHTML.page(MarkupDocument(kind: .math, source: "x^2", light: true, fontSize: 17), presentation: .inline)
+        for (page, file) in [(mermaid, MarkupHTML.mermaidScript), (math, MarkupHTML.katexScript), (math, MarkupHTML.katexStylesheet)] {
+            XCTAssertTrue(file.integrity.hasPrefix("sha384-"))
+            XCTAssertTrue(page.contains("\"\(file.url)\" integrity=\"\(file.integrity)\" crossorigin=\"anonymous\""), file.url)
+            XCTAssertTrue(MarkupHTML.allowsNavigation(to: URL(string: file.url)))
+        }
+        // Every CDN file the pages load carries a hash.
+        for page in [mermaid, math] {
+            let loads = page.components(separatedBy: "https://cdn.jsdelivr.net/").count - 1
+            let hashed = page.components(separatedBy: "integrity=\"sha384-").count - 1
+            XCTAssertEqual(loads, hashed)
+        }
     }
 
     func testAPageThatKeepsLosingItsProcessStopsReloading() {

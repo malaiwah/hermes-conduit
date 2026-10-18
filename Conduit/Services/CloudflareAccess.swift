@@ -62,14 +62,15 @@ struct CloudflareAccessCredentials: Equatable, CustomStringConvertible {
         return literal
     }
 
-    /// JavaScript injected at document start so that same-origin dashboard
-    /// `fetch()` and `XMLHttpRequest` calls inside the WKWebView include the
-    /// Cloudflare Access service-token headers. The script is intentionally
-    /// scoped to the configured dashboard origin; native requests still apply
-    /// the headers directly to the initial dashboard request. Shares the
-    /// HTTPS-only invariant of `applying(to:)`: plain-HTTP dashboard origins
-    /// get no script at all, so the credentials are never embedded in page
-    /// JavaScript either.
+    /// JavaScript injected at document start so that Conduit's own
+    /// same-origin `fetch()` and `XMLHttpRequest` calls inside the WKWebView
+    /// include the Cloudflare Access service-token headers. It must only be
+    /// installed in `DashboardScriptWorld`, never the page world: page
+    /// scripts that can reach the wrapped `fetch` can read the token back
+    /// out. The script is scoped to the configured dashboard origin; native
+    /// requests still apply the headers directly to the initial dashboard
+    /// request. Shares the HTTPS-only invariant of `applying(to:)`:
+    /// plain-HTTP dashboard origins get no script at all.
     func fetchInjectionUserScript(expectedBaseURL: String) -> String {
         guard isConfigured,
               let normalizedBaseURL = try? ConnectionURLPolicy.normalizedBaseURL(expectedBaseURL),

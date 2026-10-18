@@ -480,14 +480,9 @@ extension VoiceConversationSheet {
         .padding(.top, 14)
     }
 
-    /// Hermes' `@session:<id>` chat links read as the chat's name, as in
-    /// the transcript bubbles.
+    /// The last two lines said, as the live calls caption them.
     private var v2CaptionLines: [VoiceConversationTranscriptEntry] {
-        controller.conversationTranscript.suffix(2).map { entry in
-            entry.speaker == .user
-                ? entry
-                : VoiceConversationTranscriptEntry(id: entry.id, speaker: entry.speaker, text: HermesSessionReference.plain(entry.text))
-        }
+        LiveVoiceCallSheet.captionLines(from: controller.conversationTranscript)
     }
 
     private func v2Label(for entry: VoiceConversationTranscriptEntry) -> String {

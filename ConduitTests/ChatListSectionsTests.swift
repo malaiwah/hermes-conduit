@@ -118,4 +118,20 @@ extension SessionNestingModelTests {
         XCTAssertEqual(ChatListSection.section(of: "job", pinned: pinned, recent: recent), .older)
         XCTAssertNil(ChatListSection.section(of: "gone", pinned: pinned, recent: recent))
     }
+
+    func testProjectChatsSettingListsRecentOnesFromTodayAndYesterday() {
+        let shows = { (choice: ProjectChatsInChats, activity: TimeInterval?) in
+            choice.shows(lastActivity: activity, now: self.sectionNow, calendar: self.sectionCalendar)
+        }
+        XCTAssertFalse(shows(.hidden, at(day: 17, hour: 9)))
+        XCTAssertTrue(shows(.recent, at(day: 17, hour: 0)))
+        XCTAssertTrue(shows(.recent, at(day: 16, hour: 0)))
+        XCTAssertFalse(shows(.recent, at(day: 15, hour: 23)))
+        XCTAssertFalse(shows(.recent, nil))
+        XCTAssertTrue(shows(.all, at(day: 1, hour: 0)))
+        XCTAssertTrue(shows(.all, nil))
+        XCTAssertEqual(ProjectChatsInChats.stored(nil), .hidden)
+        XCTAssertEqual(ProjectChatsInChats.stored("bogus"), .hidden)
+        XCTAssertEqual(ProjectChatsInChats.stored("recent"), .recent)
+    }
 }

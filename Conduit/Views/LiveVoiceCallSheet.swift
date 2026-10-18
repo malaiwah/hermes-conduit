@@ -77,10 +77,12 @@ struct LiveVoiceCallSheet: View {
         case job(UUID)
         case screen(VoiceScreenCard)
 
-        var id: UUID {
+        /// A live card keeps its sheet open as it's brought up to date.
+        var id: String {
             switch self {
-            case .job(let id): return id
-            case .screen(let card): return card.id
+            case .job(let id): return "job-\(id)"
+            case .screen(let card):
+                return card.liveNames.min().map { "live-\($0)" } ?? "screen-\(card.id)"
             }
         }
     }
@@ -167,6 +169,13 @@ struct LiveVoiceCallSheet: View {
     /// user it's there. Something the user opened, or a chat being opened,
     /// isn't replaced: the card waits in the strip and the transcript.
     private func showNewScreenCard(_ cards: [VoiceScreenCard]) {
+        // An open live card follows its updates, whoever opened it.
+        if case .screen(let open) = selection, let card = cards.last, card.id != open.id,
+           card.callAnchor.callID == jobs.liveCallID, open.isUpdated(by: card) {
+            autoOpenedCardIDs.insert(card.id)
+            selection = .screen(card)
+            return
+        }
         guard let card = cards.last,
               pendingJobChat == nil,
               canReplaceSelection,
@@ -348,7 +357,19 @@ struct LiveVoiceCallSheet: View {
 
     /// The captions under the orb: the last two lines said.
     static func captionLines(from transcript: [VoiceConversationTranscriptEntry]) -> [VoiceConversationTranscriptEntry] {
-        Array(transcript.suffix(2))
+        transcript.suffix(2).map(captionLine)
+    }
+
+    /// A reply as its caption shows it: Hermes' `@session:<id>` chat links
+    /// read as the chat's name, and Markdown marks drop ("**Québec**" reads
+    /// "Québec").
+    /// The links go first, so one written as inline code stays as written.
+    /// What the user said shows as heard.
+    static func captionLine(_ entry: VoiceConversationTranscriptEntry) -> VoiceConversationTranscriptEntry {
+        guard entry.speaker == .assistant else { return entry }
+        var line = entry
+        line.text = PreviewText.plain(HermesSessionReference.plain(entry.text))
+        return line
     }
 
     // MARK: Transcript

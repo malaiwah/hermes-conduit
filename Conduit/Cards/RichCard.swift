@@ -3,7 +3,9 @@
 //  Conduit
 //
 //  A rich card as the views read it, built from a card RichCardSchema has
-//  normalized. Hermes supplies the facts here: a place's name and where it
+//  normalized (the information cards' own parts are in RichInfoCard.swift,
+//  media, contacts and statuses in RichMediaCard.swift).
+//  Hermes supplies the facts here: a place's name and where it
 //  is, its own note, and ratings, hours, prices and photos it found, each
 //  with its source. What Apple Maps knows (address, category, phone,
 //  website, travel time) is looked up on the phone when the card is drawn
@@ -22,6 +24,14 @@ struct RichCard: Identifiable, Equatable, Hashable {
         case map
         case place
         case places
+        case stats
+        case chart
+        case weather
+        case comparison
+        case steps
+        case media
+        case contact
+        case status
     }
 
     enum TravelMode: String {
@@ -40,8 +50,23 @@ struct RichCard: Identifiable, Equatable, Hashable {
     let id: Int
     let kind: Kind
     let title: String?
+    /// The name Hermes keeps this card up to date under: a later card of
+    /// the same name in the conversation replaces it.
+    let live: String?
+    /// map, place and places.
     let places: [RichPlace]
     let route: Route?
+    /// Every card but a map or place: where it's from, when Hermes said.
+    let source: RichCardSource?
+    let stats: [RichStat]
+    let chart: RichChart?
+    let weather: RichWeather?
+    let options: [RichOption]
+    let needs: [String]
+    let steps: [RichStep]
+    let media: [RichMedia]
+    let people: [RichPerson]
+    let status: RichStatus?
 
     init?(normalized json: [String: Any], id: Int) {
         guard let kind = (json["type"] as? String).flatMap(Kind.init(rawValue:)) else { return nil }
@@ -49,10 +74,10 @@ struct RichCard: Identifiable, Equatable, Hashable {
         // place's position in `places` (normalized cards never leave one out).
         let usable = (json["places"] as? [[String: Any]] ?? []).filter { RichPlace(json: $0, index: 0) != nil }
         let places = usable.enumerated().compactMap { RichPlace(json: $1, index: $0) }
-        guard !places.isEmpty else { return nil }
         self.id = id
         self.kind = kind
         self.title = json["title"] as? String
+        live = json["live"] as? String
         self.places = places
         if let route = json["route"] as? [String: Any], let to = route["to"] as? Int, places.indices.contains(to) {
             let from = (route["from"] as? Int).flatMap { places.indices.contains($0) ? $0 : nil }
@@ -60,6 +85,27 @@ struct RichCard: Identifiable, Equatable, Hashable {
                                mode: (route["mode"] as? String).flatMap(TravelMode.init(rawValue:)) ?? .driving)
         } else {
             self.route = nil
+        }
+        source = RichCardSource(json: json["source"])
+        stats = (json["stats"] as? [[String: Any]] ?? []).compactMap(RichStat.init(json:))
+        chart = RichChart(json: json["chart"])
+        weather = RichWeather(json: json["weather"])
+        options = (json["options"] as? [[String: Any]] ?? []).compactMap(RichOption.init(json:))
+        needs = json["needs"] as? [String] ?? []
+        steps = (json["steps"] as? [[String: Any]] ?? []).compactMap(RichStep.init(json:))
+        media = (json["media"] as? [[String: Any]] ?? []).compactMap(RichMedia.init(json:))
+        people = (json["people"] as? [[String: Any]] ?? []).compactMap(RichPerson.init(json:))
+        status = RichStatus(json: json["status"])
+        switch kind {
+        case .map, .place, .places: guard !places.isEmpty else { return nil }
+        case .stats: guard !stats.isEmpty else { return nil }
+        case .chart: guard chart != nil else { return nil }
+        case .weather: guard weather != nil, source != nil else { return nil }
+        case .comparison: guard options.count >= 2 else { return nil }
+        case .steps: guard !steps.isEmpty else { return nil }
+        case .media: guard !media.isEmpty, source != nil else { return nil }
+        case .contact: guard !people.isEmpty else { return nil }
+        case .status: guard status != nil else { return nil }
         }
     }
 
@@ -96,6 +142,46 @@ struct RichCard: Identifiable, Equatable, Hashable {
     static func hasCards(_ message: ChatMessage) -> Bool {
         guard message.role == .tool, let tool = message.tool else { return false }
         return !cards(for: tool).isEmpty
+    }
+
+    /// The live names a transcript row's cards carry. Only a row whose
+    /// JSON names one is read, since every publish asks.
+    @MainActor
+    static func liveNames(_ message: ChatMessage) -> [String] {
+        guard message.role == .tool, let tool = message.tool, tool.name.lowercased() == toolName,
+              tool.status == .complete,
+              (tool.output ?? "").contains("\"live\"") || (tool.input ?? "").contains("\"live\"") else { return [] }
+        // Each row is read once, not on every publish.
+        let key = LiveNamesKey(id: message.id, input: tool.input, output: tool.output)
+        if let names = liveNamesCache[key] { return names }
+        let names = cards(for: tool).compactMap(\.live)
+        if liveNamesCache.count >= 200 { liveNamesCache.removeAll() }
+        liveNamesCache[key] = names
+        return names
+    }
+
+    private struct LiveNamesKey: Hashable {
+        let id: String
+        let input: String?
+        let output: String?
+    }
+
+    @MainActor private static var liveNamesCache: [LiveNamesKey: [String]] = [:]
+
+    /// Each live name's last row in `messages`: the earlier rows with it
+    /// were brought up to date there.
+    @MainActor
+    static func latestLiveRows(_ messages: [ChatMessage]) -> [String: String] {
+        var latest: [String: String] = [:]
+        for message in messages {
+            for name in liveNames(message) { latest[name] = message.id }
+        }
+        return latest
+    }
+
+    /// `cards` less those a later row in the chat brought up to date.
+    static func current(_ cards: [RichCard], row: String, latestLiveRows: [String: String]) -> [RichCard] {
+        cards.filter { card in card.live.map { (latestLiveRows[$0] ?? row) == row } ?? true }
     }
 
     private static func jsonObject(_ text: String?) -> [String: Any]? {
@@ -185,8 +271,6 @@ struct RichPlace: Equatable, Hashable {
     }
 
     private static func webURL(_ value: Any?) -> URL? {
-        guard let text = value as? String, let url = URL(string: text),
-              let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http" else { return nil }
-        return url
+        RichJSON.webURL(value)
     }
 }

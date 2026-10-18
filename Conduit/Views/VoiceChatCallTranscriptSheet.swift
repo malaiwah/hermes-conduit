@@ -13,16 +13,27 @@ struct VoiceChatCallTranscriptSheet: View {
     let call: VoiceChatCall
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     ForEach(call.turns) { entry in
-                        LiveVoiceTranscriptBubble(
-                            entry: entry,
-                            label: label(for: entry)
-                        )
+                        if entry.speaker == .assistant, let note = VoiceJobLinkNote(text: entry.text) {
+                            VoiceJobLinkCard(note: note) {
+                                // The chat opens under the sheet: close it first.
+                                dismiss()
+                                openURL(note.link.url)
+                            }
+                            .frame(maxWidth: 360, alignment: .leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            LiveVoiceTranscriptBubble(
+                                entry: entry,
+                                label: label(for: entry)
+                            )
+                        }
                         if !entry.cards.isEmpty {
                             RichCardsView(cards: entry.cards)
                         }

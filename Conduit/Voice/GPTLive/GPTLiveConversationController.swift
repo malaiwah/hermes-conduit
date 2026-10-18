@@ -151,6 +151,12 @@ final class GPTLiveConversationController: ObservableObject {
     static let endGrace: TimeInterval = 1.5
     /// An end closes the call after this long even if the model still talks.
     static let endTimeout: TimeInterval = 8
+    /// The greeting has this long to start before Conduit asks for it as a
+    /// turn of its own (#761).
+    static let openingFallbackDelay: TimeInterval = 4
+    /// Conduit's quiet notes and job news wait at most this long for the
+    /// greeting to finish (#761).
+    static let openingHold: TimeInterval = 10
     /// Transcript text a delegation hands Hermes as context.
     static let delegationContextCharacters = 4_000
 
@@ -215,6 +221,15 @@ final class GPTLiveConversationController: ObservableObject {
     /// for one and the host didn't already (#290). Once per call.
     private let openingPrompt: @MainActor () -> String?
     private var hasSentOpening = false
+    /// Until the greeting has played, nothing of Conduit's goes in: a quiet
+    /// note arriving first (a reply that finished in the chat as the call
+    /// connected) could stop the model greeting at all (#761). Cleared once
+    /// either side starts talking, or at this time.
+    private var openingHeldUntil: Date?
+    /// When the greeting was asked for; nil when none is.
+    private var openingRequestedAt: Date?
+    private var openingAskedAgain = false
+    private var openingTask: Task<Void, Never>?
     private let bridge: GPTLiveDelegationBridge
     private let supervisor: GeminiLiveJobSupervising
     private let requestPermission: @MainActor () async -> Bool
@@ -327,6 +342,8 @@ final class GPTLiveConversationController: ObservableObject {
         billing = nil
         limitNote = nil
         hasSentOpening = false
+        clearOpeningHold()
+        openingAskedAgain = false
         finishedTurn = nil
         endTask?.cancel()
         endTask = nil
@@ -387,6 +404,7 @@ final class GPTLiveConversationController: ObservableObject {
     func stop() {
         idleFlushTask?.cancel()
         idleFlushTask = nil
+        clearOpeningHold()
         callLimitTask?.cancel()
         callLimitTask = nil
         endTask?.cancel()
@@ -587,7 +605,49 @@ final class GPTLiveConversationController: ObservableObject {
         // Not sent (the channel failed): the next ready tries again.
         hasSentOpening = session?.greetingApplied == true
             || session?.appendContext(opening, channel: .speakable, delegationID: nil) == true
+        guard hasSentOpening, lastModelTurnEndedAt == nil, lastUserSpeechAt == nil else { return }
+        let current = now()
+        openingRequestedAt = current
+        openingHeldUntil = current.addingTimeInterval(Self.openingHold)
+        openingTask?.cancel()
+        openingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self, !Task.isCancelled else { return }
+                self.checkOpening()
+                if self.openingHeldUntil == nil { return }
+            }
+        }
     }
+
+    /// A greeting that hasn't started in time is asked for once as a turn
+    /// of Conduit's own: the host's opening policy can lose to what else is
+    /// in the call (#761). Past the hold, Conduit's news goes in anyway.
+    func checkOpening() {
+        guard let heldUntil = openingHeldUntil, let requestedAt = openingRequestedAt else { return }
+        let current = now()
+        guard current < heldUntil, isActive, endRequestedAt == nil else {
+            clearOpeningHold()
+            flushPendingContextIfIdle()
+            scheduleIdleFlush()
+            return
+        }
+        guard !openingAskedAgain, !audioPaused, !modelTurnActive, lastModelOutputAt == nil, lastUserSpeechAt == nil,
+              current.timeIntervalSince(requestedAt) >= Self.openingFallbackDelay,
+              let opening = openingPrompt() else { return }
+        // Once, sent or not: a channel that refuses it is failing anyway.
+        openingAskedAgain = true
+        session?.appendContext(opening, channel: .speakable, delegationID: nil)
+    }
+
+    private func clearOpeningHold() {
+        openingTask?.cancel()
+        openingTask = nil
+        openingHeldUntil = nil
+        openingRequestedAt = nil
+    }
+
+    var isHoldingForOpeningForTesting: Bool { openingHeldUntil != nil }
 
     private func finishEnd() {
         let close = onEndConversation
@@ -614,12 +674,16 @@ final class GPTLiveConversationController: ObservableObject {
         switch event {
         case .inputTranscript(let text):
             lastUserSpeechAt = now()
+            // Someone is talking: the opening is under way or not wanted.
+            clearOpeningHold()
             appendTranscript(text, speaker: .user)
         case .outputTranscript(let text):
             // Kept while paused: GPT-Live can't be told to hold its turn, so
             // what it said into the pause stays readable.
             modelTurnActive = true
             lastModelOutputAt = now()
+            // The model's turn already holds Conduit's sends back.
+            clearOpeningHold()
             // Only the change: an unchanged phase would still publish.
             // Skipping phase's didSet then is fine: it is idempotent.
             if endRequestedAt == nil, !audioPaused, phase != .speaking { phase = .speaking }
@@ -628,6 +692,7 @@ final class GPTLiveConversationController: ObservableObject {
             switch role {
             case "user":
                 lastUserSpeechAt = now()
+                clearOpeningHold()
                 let finished = finishTurn(userTurnEntries, speaker: .user, text: text)
                 openUserEntry = nil
                 userTurnEntries = []
@@ -638,6 +703,7 @@ final class GPTLiveConversationController: ObservableObject {
             case "assistant":
                 modelTurnActive = false
                 lastModelTurnEndedAt = now()
+                clearOpeningHold()
                 bridge.modelFinishedTurn()
                 if let finished = finishTurn(assistantTurnEntries, speaker: .assistant, text: text) {
                     finishedTurn = FinishedTurn(speaker: .assistant, text: finished)
@@ -852,6 +918,8 @@ final class GPTLiveConversationController: ObservableObject {
         // Paused or silenced: an update the user can't hear waits for the audio.
         guard session?.isReady == true, !audioPaused, !isSpeakerMuted, !modelTurnActive else { return false }
         let current = now()
+        // The greeting goes first (#761).
+        if let openingHeldUntil, current < openingHeldUntil { return false }
         if let lastUserSpeechAt, current.timeIntervalSince(lastUserSpeechAt) < Self.userQuietInterval { return false }
         // Mid-sentence: the user's words are still coming in (a pause, an
         // "um"), so their turn isn't over yet.
@@ -925,6 +993,7 @@ final class GPTLiveConversationController: ObservableObject {
     private func retireSession() {
         callLimitTask?.cancel()
         callLimitTask = nil
+        clearOpeningHold()
         guard let old = session else { return }
         session = nil
         voiceNote = nil

@@ -245,12 +245,28 @@ final class SettledMessageIsolationTests: XCTestCase {
         testWindow = window
         XCTAssertTrue(PerformanceFixtureWait.settleUntilCountersQuiet(quietFor: 1.0), "the mount never settled")
 
-        TranscriptPerf.reset()
-        appState.objectWillChange.send()
-        drainUntil(0.5) { false }
+        // A publish that changes nothing the composer shows must never
+        // redraw it, so a regression redraws in every window. On a loaded
+        // runner the composer's own late work (its draft, dictation and
+        // language state) can still land in a window after the mount
+        // settles (seen twice in Nightly), which a single window cannot tell
+        // apart from a regression: one clean window out of three passes.
+        var redrawsPerWindow: [Int] = []
+        while redrawsPerWindow.count < 3, redrawsPerWindow.last != 0 {
+            if !redrawsPerWindow.isEmpty {
+                // An unsettled result is fine here: the next window is
+                // measured the same way.
+                PerformanceFixtureWait.settleUntilCountersQuiet(quietFor: 1.0)
+            }
+            TranscriptPerf.reset()
+            appState.objectWillChange.send()
+            drainUntil(0.5) { false }
+            redrawsPerWindow.append(TranscriptPerf.composerBarBodyEvaluations)
+        }
         XCTAssertEqual(
-            TranscriptPerf.composerBarBodyEvaluations, 0,
-            "a publish that changes nothing the composer shows must not redraw it, though its parent redraws"
+            redrawsPerWindow.last, 0,
+            "a publish that changes nothing the composer shows must not redraw it, though its parent redraws "
+                + "(composer redraws per publish window: \(redrawsPerWindow))"
         )
 
         appState.composerNotice = "Reconnecting"

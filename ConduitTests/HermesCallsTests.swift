@@ -712,10 +712,11 @@ extension VoiceConversationControllerTests {
         store.saveDefaultName("Unscoped", dashboardID: nil)
         XCTAssertEqual(store.defaultNamesByDashboard(), [dashboard.uuidString: "Ada"])
 
-        let context = WatchPhoneContext(callsRing: true, mainProfileNames: [dashboard.uuidString: "Ada"], activeDashboardID: dashboard.uuidString)
+        let context = WatchPhoneContext(callsRing: true, mainProfileNames: [dashboard.uuidString: "Ada"], activeDashboardID: dashboard.uuidString, accent: "teal")
         XCTAssertEqual(WatchPhoneContext.decode(context.encoded()), context)
         let older = try JSONEncoder().encode(WatchPhoneContext(voices: [:], callsRing: true))
         XCTAssertNil(WatchPhoneContext.decode([WatchPhoneContext.key: older])?.mainProfileNames, "An older iPhone app names no one")
+        XCTAssertNil(WatchPhoneContext.decode([WatchPhoneContext.key: older])?.accent, "An older iPhone app picks no accent: the Watch draws gold")
     }
 
     func testAVoIPPushSaysWhenItWasSentAndTheRelayLearnsTheToken() throws {
@@ -731,6 +732,31 @@ extension VoiceConversationControllerTests {
         XCTAssertTrue(try body(.clear)["voip_token"] is NSNull, "null clears it")
         XCTAssertEqual(try body(.set("ab"))["voip_token"] as? String, "ab")
         XCTAssertFalse(try body(.keep).keys.contains("device_token"))
+    }
+
+    func testTheRelaysRegistrationChallengeIsReadAndSentBack() throws {
+        let nonce = String(repeating: "Ab-_9", count: 8) + "xyz"
+        XCTAssertEqual(PushNotificationService.tokenChallenge(in: ["aps": ["content-available": 1], "conduit_token_challenge": nonce]), nonce)
+        XCTAssertNil(PushNotificationService.tokenChallenge(in: ["conduit_token_challenge": "short"]))
+        XCTAssertNil(PushNotificationService.tokenChallenge(in: ["conduit_token_challenge": String(nonce.dropLast()) + "!"]))
+        XCTAssertNil(PushNotificationService.tokenChallenge(in: ["conduit": ["type": "phone.changes"]]))
+
+        let url = try XCTUnwrap(URL(string: "https://push.example/v1/installations"))
+        func response(_ status: Int) throws -> URLResponse {
+            try XCTUnwrap(HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil))
+        }
+        let required = Data(#"{"error":"token_proof_required"}"#.utf8)
+        XCTAssertTrue(PushNotificationService.requiresTokenProof(response: try response(403), data: required))
+        XCTAssertFalse(PushNotificationService.requiresTokenProof(response: try response(403), data: Data(#"{"error":"token_proof_invalid"}"#.utf8)),
+                       "A wrong proof isn't retried")
+        XCTAssertFalse(PushNotificationService.requiresTokenProof(response: try response(400), data: required))
+
+        var update = UpdateRegistrationRequest(deviceToken: "ab", preferences: ConduitNotificationPreferences())
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(update)) as? [String: Any])
+        XCTAssertFalse(json.keys.contains("token_proof"))
+        update.tokenProof = nonce
+        json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(update)) as? [String: Any])
+        XCTAssertEqual(json["token_proof"] as? String, nonce)
     }
 
     func testAMissedCallNotificationOpensLikeTheCall() throws {
@@ -1362,5 +1388,57 @@ extension VoiceConversationControllerTests {
         XCTAssertFalse(context.notSetUp(.geminiLive))
         XCTAssertFalse(context.notSetUp(.grokLive), "Not checked: nothing to say")
         XCTAssertNil(WatchPhoneContext.decode([:]), "An older iPhone app shares nothing")
+    }
+
+    func testAHostWithoutTheConduitPluginTellsTheWatchNoVoiceIsSetUp() {
+        let allNotSetUp = Dictionary(uniqueKeysWithValues: WatchCallVoices.Voice.allCases.map { ($0.rawValue, false) })
+        let none = AppState.watchContextVoices(WatchCallVoices(), scope: "d|default", plugin: .predatesCapabilities)
+        XCTAssertEqual(none, allNotSetUp, "Every Watch voice needs the plugin")
+        let context = WatchPhoneContext(voices: none, callsRing: false)
+        XCTAssertTrue(WatchCallVoices.Voice.allCases.allSatisfy { context.notSetUp($0) })
+
+        var voices = WatchCallVoices()
+        voices.note(.geminiLive, ready: true, scope: "d|default")
+        XCTAssertEqual(
+            AppState.watchContextVoices(voices, scope: "d|default", plugin: .predatesCapabilities),
+            allNotSetUp,
+            "A ready check from before the plugin went missing doesn't survive it"
+        )
+
+        let all = Set(WatchCallVoices.Voice.allCases.flatMap(AppState.watchVoiceCapabilities))
+        let current = NotifierPluginStatus.State.reported(version: "0.46.0", capabilities: all.union(["hermes-calls"]))
+        XCTAssertEqual(AppState.watchContextVoices(voices, scope: "d|default", plugin: current), ["geminiLive": true])
+        XCTAssertEqual(AppState.watchContextVoices(voices, scope: "d|work", plugin: current), [:], "Another profile's checks say nothing")
+        XCTAssertEqual(AppState.watchContextVoices(voices, scope: "d|default", plugin: .unknown), ["geminiLive": true], "Not asked yet: nothing new to say")
+    }
+
+    func testAPluginWithoutAWatchVoicesRoutesTellsTheWatchItIsNotSetUp() {
+        var voices = WatchCallVoices()
+        voices.note(.geminiLive, ready: true, scope: "d|default")
+        voices.note(.grokLive, ready: true, scope: "d|default")
+        // A 0.4-0.8 plugin: it reports the three voice routes but not the
+        // Watch audio bridge (0.9) GPT-Live and Grok need, nor hermes-calls,
+        // so the voices aren't checked on connect. A voice it can't serve
+        // isn't set up, whatever an earlier check found.
+        let older = NotifierPluginStatus.State.reported(version: "0.8.0", capabilities: ["gemini-live", "gpt-live", "grok-live", "memory"])
+        let shared = AppState.watchContextVoices(voices, scope: "d|default", plugin: older)
+        XCTAssertEqual(shared, ["geminiLive": true, "gptLive": false, "grokLive": false, "hermesVoice": false])
+        let context = WatchPhoneContext(voices: shared, callsRing: false)
+        XCTAssertFalse(context.notSetUp(.geminiLive), "Its route is there: the voice may start")
+        XCTAssertTrue(context.notSetUp(.gptLive))
+        XCTAssertTrue(context.notSetUp(.grokLive), "No audio bridge: a stale ready check doesn't count")
+        XCTAssertEqual(
+            AppState.watchContextVoices(WatchCallVoices(), scope: "d|default", plugin: older),
+            ["gptLive": false, "grokLive": false, "hermesVoice": false],
+            "Gemini not checked, but served: nothing to say"
+        )
+
+        // 0.9-0.12 serves every cloud Watch voice without hermes-calls:
+        // only the checks are missing, so nothing else is marked. Hermes
+        // Voice came with 0.48.
+        let bridged = NotifierPluginStatus.State.reported(version: "0.10.0", capabilities: ["gemini-live", "gpt-live", "grok-live", "watch-audio"])
+        XCTAssertEqual(AppState.watchContextVoices(WatchCallVoices(), scope: "d|default", plugin: bridged), ["hermesVoice": false])
+        let hermesVoice = NotifierPluginStatus.State.reported(version: "0.48.0", capabilities: ["gemini-live", "gpt-live", "grok-live", "watch-audio", "watch-speech-server"])
+        XCTAssertEqual(AppState.watchContextVoices(WatchCallVoices(), scope: "d|default", plugin: hermesVoice), [:])
     }
 }

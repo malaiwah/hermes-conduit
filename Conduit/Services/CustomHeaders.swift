@@ -185,10 +185,11 @@ final class CustomHeaderStore: @unchecked Sendable {
         return request
     }
 
-    /// Document-start script that adds the headers to the dashboard page's
-    /// same-origin `fetch()` and `XMLHttpRequest` calls, mirroring the
-    /// Cloudflare token injection. Empty for cleartext origins or when
-    /// nothing is configured.
+    /// Document-start script that adds the headers to Conduit's own
+    /// same-origin `fetch()` and `XMLHttpRequest` calls in a dashboard
+    /// WebView, mirroring the Cloudflare token injection. Installed only in
+    /// `DashboardScriptWorld`, out of the page scripts' reach. Empty for
+    /// cleartext origins or when nothing is configured.
     func fetchInjectionUserScript(expectedBaseURL: String) -> String {
         guard let origin = CustomHeaderPolicy.origin(forServerURL: expectedBaseURL) else { return "" }
         let headers = CustomHeaderPolicy.sendable(withHeaders { $0[origin] ?? [] })

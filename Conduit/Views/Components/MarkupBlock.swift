@@ -549,13 +549,47 @@ enum MarkupHTML {
         case "conduit.local":
             return url.path.isEmpty || url.path == "/"
         case "cdn.jsdelivr.net":
-            return rendererPathPrefixes.contains { url.path.hasPrefix($0) }
+            return rendererPaths.contains(url.path) || url.path.hasPrefix(rendererFontFolder)
         default:
             return false
         }
     }
 
-    private static let rendererPathPrefixes = ["/npm/mermaid@", "/npm/katex@"]
+    /// Only the hashed files below and KaTeX's fonts, so a reference to
+    /// another file or version can't load around the hashes.
+    private static let rendererPaths = [mermaidScript, katexScript, katexStylesheet].compactMap { URL(string: $0.url)?.path }
+    private static let rendererFontFolder = (URL(string: katexStylesheet.url)?.deletingLastPathComponent().path ?? "") + "/fonts/"
+
+    /// The renderers' files, pinned by version and by hash: a file the CDN
+    /// serves changed doesn't run. A version bump takes new hashes: hash the
+    /// files in the npm tarball (`openssl dgst -sha384 -binary <file> | base64`)
+    /// after checking the tarball against the registry's `dist.integrity`.
+    /// A wrong hash shows "Couldn't draw" on every diagram or formula.
+    static let mermaidScript = Subresource(
+        url: "https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.min.js",
+        integrity: "sha384-T/0lMUdJpd2S1ZHtRiofG3htU3xPCrFVeAQ1UUE2TJwlEJSV5NUwn30kP28n238E"
+    )
+    static let katexScript = Subresource(
+        url: "https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js",
+        integrity: "sha384-cMkvdD8LoxVzGF/RPUKAcvmm49FQ0oxwDF3BGKtDXcEc+T1b2N+teh/OJfpU0jr6"
+    )
+    static let katexStylesheet = Subresource(
+        url: "https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css",
+        integrity: "sha384-5TcZemv2l/9On385z///+d7MSYlvIEw9FuZTIdZ14vJLqWphw7e7ZPuOiCHJcFCP"
+    )
+
+    struct Subresource {
+        let url: String
+        let integrity: String
+
+        var scriptTag: String {
+            #"<script src="\#(url)" integrity="\#(integrity)" crossorigin="anonymous"></script>"#
+        }
+
+        var stylesheetTag: String {
+            #"<link rel="stylesheet" href="\#(url)" integrity="\#(integrity)" crossorigin="anonymous">"#
+        }
+    }
 
     static func page(_ document: MarkupDocument, presentation: Presentation) -> String {
         switch document.kind {
@@ -584,7 +618,7 @@ enum MarkupHTML {
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>html,body{margin:0;padding:0;background:\(background);color:\(palette.foreground)}#content{padding:\(padding);box-sizing:border-box}svg{display:block;max-width:100%;height:auto;margin:auto}\(heightLimit).error{font:14px -apple-system,sans-serif;color:#d14b4b;white-space:pre-wrap}</style>
         </head><body><div id="content"></div>
-        <script src="https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.min.js"></script>
+        \(mermaidScript.scriptTag)
         <script>\(reportingScript(failureTitle: AppLocalization.string("Couldn't draw this diagram.")))
         (async function(){const content=document.getElementById('content');if(typeof mermaid==='undefined'){fail('');return;}try{mermaid.initialize({startOnLoad:false,securityLevel:'strict',suppressErrorRendering:true,theme:'base',themeVariables:{background:'\(palette.background)',primaryColor:'\(palette.primary)',primaryTextColor:'\(palette.foreground)',primaryBorderColor:'\(palette.border)',lineColor:'\(palette.muted)',fontFamily:'-apple-system,BlinkMacSystemFont,sans-serif'}});const result=await mermaid.render('conduit-diagram',\(jsonString(MermaidSourceRepair.repaired(document.source))));content.innerHTML=result.svg;const send=()=>report({height:Math.ceil(content.getBoundingClientRect().height)});new ResizeObserver(send).observe(content);send();}catch(error){fail(String(error&&error.message?error.message:error));}})();</script></body></html>
         """
@@ -606,10 +640,10 @@ enum MarkupHTML {
             : "function fit(){}"
         return """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css">
+        \(katexStylesheet.stylesheetTag)
         <style>html,body{margin:0;padding:0;background:\(background);color:\(palette.foreground)}body{font-size:\(fontSize)}\(contentStyle).error{font:14px -apple-system,sans-serif;color:#d14b4b;white-space:pre-wrap}</style>
         </head><body><div id="content"></div>
-        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js"></script>
+        \(katexScript.scriptTag)
         <script>\(reportingScript(failureTitle: AppLocalization.string("Couldn't draw this formula.")))
         (function(){const content=document.getElementById('content');if(typeof katex==='undefined'){fail('');return;}try{katex.render(\(jsonString(document.source)),content,{displayMode:true,throwOnError:\(throwsOnError),trust:false});}catch(error){fail(String(error&&error.message?error.message:error));return;}\(fitting)const send=()=>{fit();report({height:Math.ceil(content.getBoundingClientRect().height)});};new ResizeObserver(send).observe(content);document.fonts.ready.then(send);send();})();</script></body></html>
         """

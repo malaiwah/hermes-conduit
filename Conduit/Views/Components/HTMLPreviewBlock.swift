@@ -353,6 +353,24 @@ enum HTMLPreviewPage {
     }
 
     static let messageHandlerName = "conduitPreview"
+    /// No base URL: the page has no origin of its own, so it can't reach
+    /// files on the phone or pass for a site.
+    static let baseURL: URL? = nil
+    /// The page can draw anything and load images, media, styles and
+    /// scripts from anywhere, but can't send data off with fetch, XHR,
+    /// sockets, beacons or forms, or load frames, workers or plug-ins that
+    /// would run outside this policy (#770). A policy in the file itself
+    /// only adds limits; it can't lift these. What it may still load can
+    /// carry data one way in the URL; blocking that would break charts
+    /// drawn with a CDN library.
+    /// WebRTC is outside any policy; closing it would take a script of the
+    /// app's own in the page.
+    static let contentSecurityPolicy = "connect-src data: blob:; frame-src 'none'; worker-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'"
+
+    /// The app listens for the inline page's height and nothing else.
+    static func messageHandlerNames(reportsHeight: Bool) -> [String] {
+        reportsHeight ? [messageHandlerName] : []
+    }
     static let placeholderHeight: CGFloat = 280
     static let minimumInlineHeight: CGFloat = 60
     /// The tallest a page draws in a message; full screen shows the rest.
@@ -389,10 +407,23 @@ enum HTMLPreviewPage {
             withPrelude = prelude + document
         }
         let scripts = bridgeScript(reportsHeight: presentation == .inline)
+        let page: String
         if let bodyClose = withPrelude.range(of: "</body", options: [.caseInsensitive, .backwards]) {
-            return String(withPrelude[..<bodyClose.lowerBound]) + scripts + String(withPrelude[bodyClose.lowerBound...])
+            page = String(withPrelude[..<bodyClose.lowerBound]) + scripts + String(withPrelude[bodyClose.lowerBound...])
+        } else {
+            page = withPrelude + scripts
         }
-        return withPrelude + scripts
+        return withPolicyFirst(page)
+    }
+
+    /// The policy goes before anything of the file's but a leading doctype
+    /// (moving that would change how the page lays out), so no script of
+    /// the file's runs before it. The `<head>` the theme looks for can sit
+    /// after a script, or inside one.
+    private static func withPolicyFirst(_ page: String) -> String {
+        let policy = #"<meta http-equiv="Content-Security-Policy" content="\#(contentSecurityPolicy)">"#
+        guard let doctypeEnd = doctypeEnd(in: page) else { return policy + page }
+        return String(page[..<doctypeEnd]) + policy + String(page[doctypeEnd...])
     }
 
     /// The page fits the phone's width, follows the app's light or dark
@@ -427,14 +458,13 @@ enum HTMLPreviewPage {
         return range.upperBound
     }
 
-    /// The page itself and what it loads stay; a navigation away from it
-    /// is cancelled, and one the user tapped opens in the browser.
+    /// The page itself stays; frames (which the policy blocks too) and
+    /// navigations away from it are cancelled, and a link the user tapped
+    /// opens in the browser. A navigation without a URL is the page's own
+    /// load.
     static func navigationDecision(url: URL?, isMainFrame: Bool, userTapped: Bool) -> (allow: Bool, openExternally: URL?) {
         let scheme = url?.scheme?.lowercased()
-        if url == nil || url?.absoluteString == "about:blank" || (scheme == "about" && !isMainFrame) {
-            return (true, nil)
-        }
-        if !isMainFrame, scheme == "https" || scheme == "http" || scheme == "data" || scheme == "blob" {
+        if url == nil || url?.absoluteString == "about:blank" {
             return (true, nil)
         }
         if isMainFrame, userTapped, let url, scheme == "https" || scheme == "http" {
@@ -455,17 +485,10 @@ struct HTMLPreviewWebView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        configuration.allowsInlineMediaPlayback = true
-        configuration.mediaTypesRequiringUserActionForPlayback = .all
-        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
-        if onHeight != nil {
-            configuration.userContentController.add(
-                MarkupMessageProxy(context.coordinator),
-                name: HTMLPreviewPage.messageHandlerName
-            )
-        }
+        let configuration = Self.configuration(
+            reportsHeight: onHeight != nil,
+            handler: MarkupMessageProxy(context.coordinator)
+        )
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.isOpaque = false
         view.backgroundColor = .clear
@@ -478,6 +501,21 @@ struct HTMLPreviewWebView: UIViewRepresentable {
         context.coordinator.onFailed = onFailed
         context.coordinator.load(html, into: view)
         return view
+    }
+
+    /// What keeps an agent's script harmless: nothing stored outlives the
+    /// page, no window opens on its own, and the only message the app takes
+    /// is the height. Tests hold this in place.
+    static func configuration(reportsHeight: Bool, handler: WKScriptMessageHandler) -> WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = .all
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        for name in HTMLPreviewPage.messageHandlerNames(reportsHeight: reportsHeight) {
+            configuration.userContentController.add(handler, name: name)
+        }
+        return configuration
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {
@@ -507,7 +545,7 @@ struct HTMLPreviewWebView: UIViewRepresentable {
             guard html != self.html else { return }
             self.html = html
             reloads = MarkupReloads()
-            view.loadHTMLString(html, baseURL: nil)
+            view.loadHTMLString(html, baseURL: HTMLPreviewPage.baseURL)
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -521,7 +559,7 @@ struct HTMLPreviewWebView: UIViewRepresentable {
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             guard !html.isEmpty else { return }
             if reloads.mayReload() {
-                webView.loadHTMLString(html, baseURL: nil)
+                webView.loadHTMLString(html, baseURL: HTMLPreviewPage.baseURL)
             } else {
                 onFailed?()
             }

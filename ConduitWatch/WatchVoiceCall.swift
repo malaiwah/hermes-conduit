@@ -4,7 +4,8 @@
 //
 //  The one call the Watch app shows, whichever engine runs it: Gemini Live
 //  on the Watch itself or Grok on the Hermes host (WatchDirectCallModel,
-//  which runs both conversations), or GPT-Live through the Hermes host's
+//  which runs both conversations), or GPT-Live or Hermes Voice (the host's
+//  own speech server, with Hermes answering) through the Hermes host's
 //  audio bridge (WatchBridgeCallModel). The screens read the
 //  call from here and send its controls here, so they never depend on the
 //  engine.
@@ -31,6 +32,9 @@ enum WatchVoiceEngine: String, CaseIterable, Identifiable {
     case geminiLive
     case gptLive
     case grokLive
+    /// The Hermes host's own speech server listens and speaks, and Hermes
+    /// answers: no cloud voice model.
+    case hermesVoice
 
     static let storageKey = "watchVoice.engine"
 
@@ -41,13 +45,14 @@ enum WatchVoiceEngine: String, CaseIterable, Identifiable {
         case .geminiLive: return String(localized: "Gemini Live")
         case .gptLive: return String(localized: "GPT-Live")
         case .grokLive: return String(localized: "Grok")
+        case .hermesVoice: return String(localized: "Hermes Voice")
         }
     }
 
     var detail: String {
         switch self {
         case .geminiLive: return String(localized: "Runs on your Watch")
-        case .gptLive, .grokLive: return String(localized: "Runs on your Hermes host")
+        case .gptLive, .grokLive, .hermesVoice: return String(localized: "Runs on your Hermes host")
         }
     }
 
@@ -57,6 +62,7 @@ enum WatchVoiceEngine: String, CaseIterable, Identifiable {
         case .geminiLive: return .geminiLive
         case .gptLive: return .gptLive
         case .grokLive: return .grokLive
+        case .hermesVoice: return .hermesVoice
         }
     }
 
@@ -65,6 +71,7 @@ enum WatchVoiceEngine: String, CaseIterable, Identifiable {
         case .geminiLive: return "sparkles"
         case .gptLive: return "waveform.path.ecg"
         case .grokLive: return "bolt.fill"
+        case .hermesVoice: return "house.fill"
         }
     }
 }
@@ -185,6 +192,7 @@ final class WatchVoiceCall: ObservableObject {
         case .geminiLive: Task { await direct.start(engine: .gemini, ring: ring, answer: answer) }
         case .grokLive: Task { await direct.start(engine: .grok, ring: ring, answer: answer) }
         case .gptLive: Task { await bridge.start(ring: ring, answer: answer) }
+        case .hermesVoice: Task { await bridge.start(ring: ring, answer: answer, engine: WatchAudioBridgeWire.speechServer) }
         }
     }
 
@@ -195,13 +203,14 @@ final class WatchVoiceCall: ObservableObject {
         case .geminiLive: return WatchDirectCallModel.startRequest(engine: .gemini, callID: callID, ring: ring)
         case .grokLive: return WatchDirectCallModel.startRequest(engine: .grok, callID: callID, ring: ring)
         case .gptLive: return WatchBridgeCallModel.startRequest(callID: callID, ring: ring)
+        case .hermesVoice: return WatchBridgeCallModel.startRequest(callID: callID, ring: ring, engine: WatchAudioBridgeWire.speechServer)
         }
     }
 
     func end() {
         switch callEngine {
         case .geminiLive, .grokLive: direct.end()
-        case .gptLive: bridge.end()
+        case .gptLive, .hermesVoice: bridge.end()
         }
     }
 
@@ -210,14 +219,14 @@ final class WatchVoiceCall: ObservableObject {
     func tap() {
         switch callEngine {
         case .geminiLive, .grokLive: direct.tapOrb()
-        case .gptLive: bridge.tapOrb()
+        case .gptLive, .hermesVoice: bridge.tapOrb()
         }
     }
 
     func toggleMute() {
         switch callEngine {
         case .geminiLive, .grokLive: direct.toggleMute()
-        case .gptLive: bridge.toggleMute()
+        case .gptLive, .hermesVoice: bridge.toggleMute()
         }
     }
 
@@ -225,7 +234,7 @@ final class WatchVoiceCall: ObservableObject {
     func answerApproval(_ approval: WatchJobAnswer.Approval, approve: Bool) {
         switch callEngine {
         case .geminiLive, .grokLive: direct.answerApproval(approval, approve: approve)
-        case .gptLive: bridge.answerApproval(approval, approve: approve)
+        case .gptLive, .hermesVoice: bridge.answerApproval(approval, approve: approve)
         }
     }
 
@@ -304,7 +313,7 @@ final class WatchVoiceCall: ObservableObject {
 
     private func startOnOpenIfWanted() {
         // A call from Hermes ringing or answered is the call.
-        guard startsOnOpen, !isActive, !HermesWatchCalls.shared.holdsCall else { return }
+        guard !isScreenshotFixture, startsOnOpen, !isActive, !HermesWatchCalls.shared.holdsCall else { return }
         // Back from the background is an open, however soon after a call
         // ended: reading the summary with the wrist down and up again
         // never leaves inactive. Return to Clock running out on the summary
@@ -323,6 +332,42 @@ final class WatchVoiceCall: ObservableObject {
         start()
     }
 
+    // MARK: Screenshot fixture
+
+    /// Set by `-conduitScreenshotCall home|speaking|listening|ended` (debug builds only):
+    /// the App Store screenshot run (scripts/app-store) shows a call in that
+    /// state with no audio or connection behind it.
+    private(set) var isScreenshotFixture = false
+
+    func applyScreenshotFixture(arguments: [String] = ProcessInfo.processInfo.arguments) {
+        #if DEBUG
+        guard let index = arguments.firstIndex(of: "-conduitScreenshotCall"), index + 1 < arguments.count else { return }
+        isScreenshotFixture = true
+        if arguments[index + 1] == "home" { return }
+        // Demo content, English only like the rest of the demo world.
+        let now = Date()
+        callEngine = engine
+        transcript = [
+            .init(role: .user, text: "What's on my calendar this afternoon?", at: now.addingTimeInterval(-70)),
+            .init(role: .assistant, text: "Two things: a dentist appointment at 3, and Maya's soccer practice at 5:30. Want me to set a reminder to leave by 2:40?", at: now.addingTimeInterval(-62)),
+            .init(role: .user, text: "Yes, and text Maya's coach that we might be ten minutes late.", at: now.addingTimeInterval(-40)),
+            .init(role: .assistant, text: "Reminder set for 2:40. I've drafted the text to Coach Rivera and started a job to send it.", at: now.addingTimeInterval(-30)),
+        ]
+        liveSince = now.addingTimeInterval(-83)
+        jobsRunning = 1
+        switch arguments[index + 1] {
+        case "ended":
+            endedAt = now
+            phase = .ended(nil)
+        case "listening":
+            phase = .listening
+        default:
+            caption = transcript.last?.text
+            phase = .speaking
+        }
+        #endif
+    }
+
     // MARK: State
 
     private func queueRefresh() {
@@ -336,11 +381,11 @@ final class WatchVoiceCall: ObservableObject {
     }
 
     private func refresh() {
-        guard !summaryDismissed else { return }
+        guard !summaryDismissed, !isScreenshotFixture else { return }
         let next: Phase
         switch callEngine {
         case .geminiLive, .grokLive: next = Self.phase(direct.phase)
-        case .gptLive: next = Self.phase(bridge.phase)
+        case .gptLive, .hermesVoice: next = Self.phase(bridge.phase)
         }
         // Only a dismissed summary goes back to the home screen: a model
         // at rest before its start has run isn't the end of the call, and
@@ -357,7 +402,7 @@ final class WatchVoiceCall: ObservableObject {
             isMuted = direct.isMuted
             jobsRunning = direct.runningJobs + direct.relayJobsRunning
             pendingApproval = direct.pendingApproval
-        case .gptLive:
+        case .gptLive, .hermesVoice:
             caption = bridge.caption
             transcript = bridge.transcript
             isMuted = bridge.isMuted
@@ -378,7 +423,7 @@ final class WatchVoiceCall: ObservableObject {
     private var modelCallID: UInt32 {
         switch callEngine {
         case .geminiLive, .grokLive: return direct.callID
-        case .gptLive: return bridge.callID
+        case .gptLive, .hermesVoice: return bridge.callID
         }
     }
 

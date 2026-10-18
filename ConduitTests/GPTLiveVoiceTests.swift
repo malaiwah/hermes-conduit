@@ -858,6 +858,95 @@ extension VoiceConversationControllerTests {
         older.stop()
     }
 
+    /// #761: a reply finishing in the chat as the call connects waits for
+    /// the greeting, and a greeting that never starts is asked for once.
+    func testGPTLiveGreetingGoesBeforeQuietNotesAndIsAskedForWhenItNeverStarts() async {
+        var current = Date(timeIntervalSince1970: 1_000)
+        let (controller, session, supervisor, _) = makeGPTController(openingPrompt: "[greet]", clock: { current })
+        supervisor.liveThread = VoiceThreadTarget(runtimeSessionID: "rt-chat", storedSessionID: nil, title: "New chat")
+        session.briefingApplied = true
+        session.greetingApplied = true
+        await controller.start()
+        session.becomeReady()
+        XCTAssertTrue(controller.isHoldingForOpeningForTesting)
+        XCTAssertFalse(controller.isConversationIdle, "The greeting goes first")
+
+        supervisor.observe(.messageComplete(sessionId: "rt-chat", messageId: "m1", content: "Typed reply.", reasoning: nil))
+        controller.deliverPendingJobUpdates()
+        controller.flushPendingContextIfIdle()
+        XCTAssertTrue(session.appended.isEmpty, "No note before the greeting: \(session.appended)")
+        XCTAssertEqual(controller.pendingContextCountForTesting, 1)
+
+        current += GPTLiveConversationController.openingFallbackDelay - 1
+        controller.checkOpening()
+        XCTAssertTrue(session.speakable.isEmpty, "The host's greeting still has time")
+        current += 1
+        controller.checkOpening()
+        XCTAssertEqual(session.speakable.map(\.text), ["[greet]"], "Silent past the delay: asked for as a turn")
+        controller.checkOpening()
+        XCTAssertEqual(session.speakable.count, 1, "Once per call")
+
+        session.onEvent?(.outputTranscript("Hi! Here and listening."))
+        session.onEvent?(.turnDone(role: "assistant", transcript: "Hi! Here and listening."))
+        XCTAssertFalse(controller.isHoldingForOpeningForTesting)
+        current += GPTLiveConversationController.modelQuietInterval
+        controller.flushPendingContextIfIdle()
+        XCTAssertEqual(controller.pendingContextCountForTesting, 0)
+        XCTAssertTrue(session.appended.last?.text.contains("Typed reply.") == true, "The note follows the greeting")
+        controller.stop()
+    }
+
+    func testGPTLiveGreetingHoldEndsWhenTheUserSpeaksOrItRunsOut() async {
+        var current = Date(timeIntervalSince1970: 1_000)
+        let (controller, session, _, _) = makeGPTController(openingPrompt: "[greet]", clock: { current })
+        session.briefingApplied = true
+        session.greetingApplied = true
+        await controller.start()
+        session.becomeReady()
+        session.onEvent?(.turnDone(role: "user", transcript: "Hello?"))
+        XCTAssertFalse(controller.isHoldingForOpeningForTesting, "The user spoke first: nothing to wait for")
+        current += GPTLiveConversationController.openingFallbackDelay
+        controller.checkOpening()
+        XCTAssertTrue(session.speakable.isEmpty, "No greeting over the user's turn")
+        controller.stop()
+
+        let (timed, timedSession, _, _) = makeGPTController(openingPrompt: "[greet]", clock: { current })
+        timedSession.briefingApplied = true
+        timedSession.greetingApplied = true
+        await timed.start()
+        timedSession.becomeReady()
+        timedSession.onEvent?(.outputTranscript("Hi"))
+        current += GPTLiveConversationController.openingHold
+        timed.checkOpening()
+        XCTAssertFalse(timed.isHoldingForOpeningForTesting, "Conduit's news never waits for good")
+        XCTAssertTrue(timedSession.speakable.isEmpty, "It was already speaking")
+        timed.stop()
+
+        // True silence: the hold runs out and the waiting note goes in.
+        let (expired, expiredSession, expiredSupervisor, _) = makeGPTController(openingPrompt: "[greet]", clock: { current })
+        expiredSupervisor.liveThread = VoiceThreadTarget(runtimeSessionID: "rt-chat", storedSessionID: nil, title: "New chat")
+        expiredSession.briefingApplied = true
+        expiredSession.greetingApplied = true
+        await expired.start()
+        expiredSession.becomeReady()
+        expiredSupervisor.observe(.messageComplete(sessionId: "rt-chat", messageId: "m2", content: "Typed reply.", reasoning: nil))
+        expired.deliverPendingJobUpdates()
+        XCTAssertEqual(expired.pendingContextCountForTesting, 1)
+        current += GPTLiveConversationController.openingHold
+        expired.checkOpening()
+        XCTAssertFalse(expired.isHoldingForOpeningForTesting)
+        XCTAssertEqual(expired.pendingContextCountForTesting, 0, "The note goes in once the hold runs out")
+        XCTAssertTrue(expiredSession.appended.last?.text.contains("Typed reply.") == true)
+        expired.stop()
+
+        let (silent, silentSession, _, _) = makeGPTController(clock: { current })
+        await silent.start()
+        silentSession.becomeReady()
+        XCTAssertFalse(silent.isHoldingForOpeningForTesting, "No greeting asked for: nothing waits")
+        XCTAssertTrue(silent.isConversationIdle)
+        silent.stop()
+    }
+
     /// #544: a call Hermes placed asks the host to have the model speak
     /// first, instead of the "don't speak first" policy that kept it silent.
     func testGPTLiveCallHermesPlacedAsksTheHostToSpeakFirst() async throws {

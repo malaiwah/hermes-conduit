@@ -830,6 +830,24 @@ final class AppState: ObservableObject {
     /// The latest `session.active_list` snapshot and the profile it belongs
     /// to (#454).
     @Published private(set) var liveSessionStatusIndex = SessionLiveStatusIndex()
+    /// Where active_list snapshots and a required sign-in reach the Lock
+    /// Screen's turn activities (LiveTurnActivities); tests watch them. A
+    /// snapshot answers true when a turn's chat was just seen absent and
+    /// another read is needed to settle it.
+    var liveTurnActivitiesRegistrySnapshot: @MainActor (Set<String>, String, String?) -> Bool = { ids, profile, dashboardID in
+        LiveTurnActivities.shared.reconcile(liveSessionIDs: ids, profile: profile, dashboardID: dashboardID)
+    }
+    /// The one `session.active_list` read that settles a turn whose chat
+    /// was just seen absent, whether or not the chat list (and its poll) is
+    /// on screen.
+    private var liveTurnRegistryRecheck: Task<Void, Never>?
+    var liveTurnRegistryRecheckPending: Bool { liveTurnRegistryRecheck != nil }
+    /// Ends a dashboard's turn activities (Disconnect, Sign Out, a required
+    /// sign-in), or with `true` only those the relay can't end by push.
+    var liveTurnActivitiesEndDashboard: @MainActor (String?, Bool) -> Void = { dashboardID, keepingThoseOnRelay in
+        LiveTurnActivities.shared.endTurns(ofDashboard: dashboardID, keepingThoseOnRelay: keepingThoseOnRelay)
+    }
+
     private var liveSessionStatusProfile: String?
     /// The client whose gateway rejected `session.active_list`, so the chat
     /// list's poll stops asking it.
@@ -1197,6 +1215,9 @@ final class AppState: ObservableObject {
     private var persistedOrderingFrontier = PersistedOrderingFrontier()
     @Published private(set) var busyInputMode: BusyInputMode = .steer
     @Published private(set) var displayPreferences = ProfileDisplayPreferences()
+    /// The profile's `timezone` config value ("" = the server's local time)
+    /// and the profile it was read for. Hermes runs cron schedules in it.
+    @Published private(set) var profileTimeZoneSetting: (profile: String, value: String)?
     /// The running turn's live reply text and thinking card. They publish on
     /// their own object, never on AppState: while a turn streams they change
     /// 20 to 30 times a second, and an AppState publish re-renders every view
@@ -1796,6 +1817,18 @@ final class AppState: ObservableObject {
     /// Kept as a computed compatibility surface for views that only need the
     /// currently-running flag. New code should use `turnState` for actions.
     var isBusy: Bool { turnState.isRunning }
+
+    /// Voice from the open chat while its reply runs. A live call works
+    /// beside the turn (it hands work to Hermes as jobs; Local Live says
+    /// it's busy), but classic voice talks in the chat's own turn, so it
+    /// waits for Stop or the end of the reply (#762).
+    var voiceWaitsForRunningTurn: Bool {
+        Self.voiceWaitsForRunningTurn(isBusy: isBusy, liveEngine: configuredLiveVoiceEngine(profile: activeProfile))
+    }
+
+    nonisolated static func voiceWaitsForRunningTurn(isBusy: Bool, liveEngine: VoiceCallEngine?) -> Bool {
+        isBusy && liveEngine == nil
+    }
     /// The read-only offline copy never accepts input: nothing typed there
     /// could be delivered, and it is not the live conversation. Nor does a
     /// New Chat Hermes hasn't created yet.
@@ -2959,9 +2992,10 @@ final class AppState: ObservableObject {
         }
         let url = try ConnectionURLPolicy.webSocketURL(baseURL: connection.baseUrl, path: path, queryItems: queryItems)
         // Behind Cloudflare Access the upgrade needs the service-token
-        // headers, like the speech stream's.
-        let request = URLRequest(url: url)
-        return request.applyingProxyHeaders(cloudflare: bridge.cloudflareAccess)
+        // headers, like the speech stream's. The authorizer then adds the
+        // dashboard's own session cookies (cookie mode).
+        let request = URLRequest(url: url).applyingProxyHeaders(cloudflare: bridge.cloudflareAccess)
+        return try await bridge.requestAuthorizer.authorizeUpgrade(request)
     })
 
     /// Built on first use only, like Gemini Live's.
@@ -3227,8 +3261,10 @@ final class AppState: ObservableObject {
         }
         let url = try ConnectionURLPolicy.webSocketURL(baseURL: connection.baseUrl, path: path, queryItems: queryItems)
         // Behind Cloudflare Access the upgrade needs the service-token
-        // headers, like the speech stream's.
-        return URLRequest(url: url).applyingProxyHeaders(cloudflare: bridge.cloudflareAccess)
+        // headers, like the speech stream's. The authorizer then adds the
+        // dashboard's own session cookies (cookie mode), as for Grok's relay.
+        let request = URLRequest(url: url).applyingProxyHeaders(cloudflare: bridge.cloudflareAccess)
+        return try await bridge.requestAuthorizer.authorizeUpgrade(request)
     })
 
     /// Built on first use only, like the other live modes'.
@@ -4161,6 +4197,21 @@ final class AppState: ObservableObject {
     /// another return asked for one while it ran.
     private(set) var leaveCatalogRefreshTask: Task<Void, Never>?
     private var leaveCatalogRefreshPending = false
+    private var leaveCatalogRefreshReportsFailure = false
+    /// One chat on two devices (ChatSync.swift): when the list reads the
+    /// catalog on its own, the open chat's registry checks, and the newest
+    /// `session.active_list` snapshot they share, so the open chat reuses
+    /// the list's poll instead of asking again.
+    private var chatListCatalogFreshness = ChatListCatalogFreshness()
+    private var openChatSync = OpenChatSync()
+    private var latestActiveList: (rows: [LiveSessionStatus], profile: String, client: ObjectIdentifier, at: Date)?
+    private(set) var openChatSyncRead: Task<Void, Never>?
+    private var openChatSyncReadID: UUID?
+    /// Another device is getting the reply of a turn in the open chat; its
+    /// working line says so.
+    @Published private(set) var activeChatRepliesElsewhere = false
+    /// The clock of those checks; tests move it.
+    var chatSyncNow: @MainActor () -> Date = { Date() }
     private var projectsRequestGeneration = 0
     /// Fences optional approval-queue reads across re-entrant MainActor
     /// awaits. A late response must not populate a replacement conversation.
@@ -5622,6 +5673,13 @@ final class AppState: ObservableObject {
     /// drawer's nests) can re-resolve parents the row list alone doesn't
     /// show changing.
     @Published private(set) var voiceCallChatLinksRevision = 0
+    #if DEBUG
+    /// Test seam: a publish that changes something every transcript row
+    /// reads (`ChatRowState`) without changing any row's content.
+    func bumpVoiceCallChatLinksRevisionForTesting() {
+        voiceCallChatLinksRevision &+= 1
+    }
+    #endif
     private var voiceTagsFetchedAt: [String: Date] = [:]
     private var voiceTagRefreshTask: Task<Void, Never>?
     static let voiceTagRefreshInterval: TimeInterval = 15
@@ -7608,6 +7666,7 @@ final class AppState: ObservableObject {
             if !liveSessionStatusAvailable { liveSessionStatusAvailable = true }
             activeListFailureLoggedClient = nil
             recordActiveListEvidence(rows, profile: profile)
+            latestActiveList = (rows, profile, ObjectIdentifier(client), chatSyncNow())
         } catch {
             // Stop asking a gateway that doesn't have the method; a new
             // connection probes again. Other failures retry on the next tick.
@@ -8238,8 +8297,12 @@ final class AppState: ObservableObject {
         return true
     }
 
-    func recordChatViewport(_ snapshot: ChatScrollSnapshot, for key: ChatScrollSessionKey) {
-        chatResumeCoordinator.recordViewport(snapshot, for: key)
+    func recordChatViewport(
+        _ snapshot: ChatScrollSnapshot,
+        for key: ChatScrollSessionKey,
+        holdWhile: (@MainActor @Sendable () -> Bool)? = nil
+    ) {
+        chatResumeCoordinator.recordViewport(snapshot, for: key, holdWhile: holdWhile)
     }
 
     func installChatViewportSnapshotProvider(
@@ -10640,6 +10703,7 @@ final class AppState: ObservableObject {
             // its old in-memory session. Tear it down before presenting login.
             dashboardTicketBridge?.invalidate()
             dashboardTicketBridge = nil
+            let pluginStateBeforeSignIn = notifierPlugin.state
             notifierPlugin = freshNotifierPluginStatus
             let failure = ConnectionFailureClassifier.classify(error)
             if keepOfflineChatInsteadOfSignIn(failure) { return }
@@ -10648,6 +10712,7 @@ final class AppState: ObservableObject {
             isConnected = false
             showLogin = true
             pendingLoginFailure = .presenting(ConnectionFailureClassifier.classify(error))
+            endLockScreenTurnsForSignIn(plugin: pluginStateBeforeSignIn)
         }
     }
 
@@ -10835,6 +10900,7 @@ final class AppState: ObservableObject {
                   ),
                   let activeClient = self.client, activeClient === client else { return }
             handedOffAutomaticIntent = continuation.handedOffAutomaticIntent
+            if stopRecoveryForRefusedSocket(error) { return }
             isConnecting = false
             isConnected = false
             turnState = .reconnecting
@@ -11130,6 +11196,8 @@ final class AppState: ObservableObject {
     }
 
     func disconnect() {
+        // Its turns' Lock Screen progress has nothing left to follow.
+        liveTurnActivitiesEndDashboard(activeDashboardID?.uuidString, false)
         widgetLaunchCoordinator.supersede()
         cancelExplicitSessionOpen()
         dismissChatTakeover()
@@ -11564,6 +11632,7 @@ final class AppState: ObservableObject {
             return
         }
         removeWidgetSnapshot(dashboardID: id)
+        liveTurnActivitiesEndDashboard(id.uuidString, false)
         KeychainHelper.clearConnection(dashboardID: id)
         keepUsernameForNextSignIn(dashboardID: id)
         KeychainHelper.clearCredentials(dashboardID: id)
@@ -11619,6 +11688,9 @@ final class AppState: ObservableObject {
             connection: connection,
             profile: profile,
             cloudflareAccess: dashboardScopedCloudflareAccess(for: connection.baseUrl),
+            // The current bridge's authorizer: it attaches its session
+            // cookies only to its own dashboard's address.
+            requestAuthorizer: dashboardTicketBridge?.requestAuthorizer,
             transportFactory: transportFactory
         )
         let epoch = UUID()
@@ -11853,6 +11925,8 @@ final class AppState: ObservableObject {
         lastConnectionFailure = failure
         showLogin = true
         pendingLoginFailure = .presenting(failure)
+        // The saved-password restore never resets the plugin status.
+        endLockScreenTurnsForSignIn(plugin: notifierPlugin.state)
         return true
     }
 
@@ -11947,16 +12021,37 @@ final class AppState: ObservableObject {
                 notifierPlugin = freshNotifierPluginStatus
             }
             dashboardTicketBridge?.invalidate()
+            // The selected dashboard's request authority: its native grant
+            // (or cookie mode), its origin and base path, and the other saved
+            // dashboards it must never authorize for, read live so adding or
+            // removing one applies at once.
+            let requestAuthorizer = DashboardRequestAuthorizer.forDashboard(
+                baseURL: normalized,
+                dashboardID: dashboardID,
+                cloudflareAccess: access,
+                otherDashboardURLs: { [weak self] in
+                    self?.savedDashboardRegistry.dashboards
+                        .filter { $0.id != dashboardID }
+                        .map(\.normalizedURL) ?? []
+                }
+            )
             let bridge = DashboardTicketBridge(
                 baseURL: normalized,
                 cloudflareAccess: access,
-                dashboardID: dashboardID
+                dashboardID: dashboardID,
+                requestAuthorizer: requestAuthorizer
             )
             bridge.onPageEvent = { [weak self, weak bridge] event in
                 guard let self, let bridge, self.dashboardTicketBridge === bridge else { return }
                 self.noteConnectionStep(event)
             }
             dashboardTicketBridge = bridge
+        } else if let bridge = dashboardTicketBridge, bridge.requiresSignIn {
+            // The same dashboard's page settled on sign-in, and a connection
+            // is starting again: a browser sign-in just put a fresh session
+            // in this dashboard's WebKit store. Load the page again so the
+            // next ticket is minted with it, not refused by the old verdict.
+            bridge.reload()
         }
     }
 
@@ -11989,7 +12084,46 @@ final class AppState: ObservableObject {
         performSignInRequired(pendingFailure: .notice(title: AppLocalization.string("Sign-in didn’t complete"), message: message))
     }
 
-    private func performSignInRequired(pendingFailure: ConnectionFailurePresentation) {
+    /// Which of the dashboard's Lock Screen turns a required sign-in ends.
+    enum SignInLockScreenTurnsEnd: Equatable {
+        /// None: off the phone screen the refusal is weak evidence, retried
+        /// once Conduit is on screen.
+        case keepAll
+        /// Those whose push token this iPhone's current relay installation
+        /// didn't take: the Conduit plugin still ends the others by push,
+        /// whatever Conduit's own sign-in.
+        case endNotOnRelay
+        /// All of them: without the plugin nothing else will.
+        case endAll
+
+        /// `liveTurnActivitiesEndDashboard`'s `keepingThoseOnRelay`, or nil
+        /// when none end.
+        var keepingThoseOnRelay: Bool? {
+            switch self {
+            case .keepAll: nil
+            case .endNotOnRelay: true
+            case .endAll: false
+            }
+        }
+    }
+
+    /// What a required sign-in does to the dashboard's Lock Screen turns.
+    /// What stays open: a plugin too old to push Live Activity updates,
+    /// which no capability reports yet; a turn the relay took a token for
+    /// then keeps counting until the system's own limit.
+    nonisolated static func signInEndsLockScreenTurns(
+        screenAway: Bool,
+        plugin: NotifierPluginStatus.State
+    ) -> SignInLockScreenTurnsEnd {
+        guard !screenAway else { return .keepAll }
+        if case .reported = plugin { return .endNotOnRelay }
+        return .endAll
+    }
+
+    private func performSignInRequired(
+        pendingFailure: ConnectionFailurePresentation,
+        keepingNativeGrant: Bool = false
+    ) {
         cancelChatResumeTransportRecovery()
         invalidateReconciliation()
         invalidateGroupChatState()
@@ -12003,6 +12137,7 @@ final class AppState: ObservableObject {
         connection = nil
         dashboardTicketBridge?.invalidate()
         dashboardTicketBridge = nil
+        let pluginStateBeforeSignIn = notifierPlugin.state
         notifierPlugin = freshNotifierPluginStatus
         // A forced sign-out kills the bridge mid-playback; stop the read
         // aloud and drop its gateway the same way Disconnect does.
@@ -12035,8 +12170,14 @@ final class AppState: ObservableObject {
         if !phoneScreenIsAway() {
             if let dashboardID = activeDashboardID {
                 // Forced sign-out is scoped like Disconnect: only the active
-                // dashboard's saved ticket (and cookie mirror) is retired.
-                KeychainHelper.clearConnection(dashboardID: dashboardID)
+                // dashboard's saved ticket (and cookie mirror) is retired. A
+                // refused socket keeps the native grant: a refusal is never
+                // a sign-out.
+                if keepingNativeGrant {
+                    KeychainHelper.clearSavedSession(dashboardID: dashboardID)
+                } else {
+                    KeychainHelper.clearConnection(dashboardID: dashboardID)
+                }
             }
             wipeOfflineChatCache(dashboardID: activeDashboardID)
         }
@@ -12048,6 +12189,21 @@ final class AppState: ObservableObject {
         errorMessage = nil
         showLogin = true
         pendingLoginFailure = pendingFailure
+        endLockScreenTurnsForSignIn(plugin: pluginStateBeforeSignIn)
+    }
+
+    /// A refused or expired sign-in of the active dashboard (required,
+    /// saved password, native OAuth restore): a turn of it nothing can end
+    /// now stops counting up on the Lock Screen. A cancelled Face ID isn't
+    /// a refusal, and leaves them for the retry. `plugin` is the notifier
+    /// plugin's state before the sign-in reset it.
+    private func endLockScreenTurnsForSignIn(plugin: NotifierPluginStatus.State) {
+        if let keepingThoseOnRelay = Self.signInEndsLockScreenTurns(
+            screenAway: phoneScreenIsAway(),
+            plugin: plugin
+        ).keepingThoseOnRelay {
+            liveTurnActivitiesEndDashboard(activeDashboardID?.uuidString, keepingThoseOnRelay)
+        }
     }
 
     // MARK: - Authoritative reconciliation
@@ -14739,8 +14895,24 @@ final class AppState: ObservableObject {
     }
 
     func reconnect() async {
+        // The dashboard already said sign-in is required and automatic
+        // recovery stopped: another reconnect would only be refused again,
+        // which looks like Reconnect doing nothing. It opens sign-in.
+        // A refusal is never a sign-out, so the native grant stays, as on
+        // the refused-socket path that stopped recovery.
+        if signInRequiredForReconnect {
+            performSignInRequired(pendingFailure: .signInExpired, keepingNativeGrant: true)
+            return
+        }
         cancelChatResumeTransportRecovery()
         await executeReconnect(purpose: .preserveCurrent)
+    }
+
+    /// Whether the active dashboard is known to need sign-in before any
+    /// reconnect can work: the last failure was a sign-in the server asked
+    /// for, and nothing has connected since.
+    var signInRequiredForReconnect: Bool {
+        !isConnected && lastConnectionFailure == .loginRequired
     }
 
     private func executeReconnect(purpose: ChatResumeSyncPurpose) async {
@@ -14895,12 +15067,16 @@ final class AppState: ObservableObject {
                 guard refreshTransportContinuation() else { return }
                 // The dashboard's session is gone (sign-in required): the
                 // typed classification routes Repair toward browser sign-in.
+                // This connection worked before, so without a re-auth error
+                // that explains more, the card says the sign-in expired.
                 lastConnectionFailure = .loginRequired
                 requireSignIn(
-                    failure: Self.silentRenewalSignInFailure(
-                        reauthError: silentRenewalReauthError,
-                        bridgeError: bridgeError
-                    )
+                    failure: silentRenewalReauthError == nil
+                        ? .signInExpired
+                        : Self.silentRenewalSignInFailure(
+                            reauthError: silentRenewalReauthError,
+                            bridgeError: bridgeError
+                        )
                 )
             } else {
                 guard refreshTransportContinuation() else { return }
@@ -14974,11 +15150,27 @@ final class AppState: ObservableObject {
         } catch {
             guard refreshTransportContinuation(),
                   let activeClient = self.client, activeClient === client else { return }
+            if stopRecoveryForRefusedSocket(error) { return }
             isConnected = false
             isConnecting = false
             turnState = .reconnecting
             scheduleReconnectAfterFailedSync()
         }
+    }
+
+    /// A dashboard socket the server refused in a way no reconnect changes:
+    /// a redirected upgrade is the sign-in service in front of the dashboard
+    /// sending Conduit to sign in, so its session expired. Reconnecting
+    /// would only repeat it, so automatic recovery stops and the sign-in
+    /// screen says why. A native grant is kept: a refusal is never a
+    /// sign-out. False for any other error, which the reconnect path
+    /// retries.
+    private func stopRecoveryForRefusedSocket(_ error: Error) -> Bool {
+        guard let refusal = error as? DashboardSocketHandshakeError else { return false }
+        noteConnectionStep("Socket refused", error: refusal)
+        lastConnectionFailure = ConnectionFailureClassifier.classify(refusal)
+        performSignInRequired(pendingFailure: .signInExpired, keepingNativeGrant: true)
+        return true
     }
 
     // MARK: - Connection timeline (#417)
@@ -15892,6 +16084,32 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// The ids of every `session.active_list` row still running or about to
+    /// (working, waiting, starting): what a turn's Live Activity is settled
+    /// against. Idle rows are sessions with no turn.
+    nonisolated static func liveTurnSessionIDs(_ rows: [LiveSessionStatus]) -> Set<String> {
+        var ids = Set<String>()
+        for row in rows where row.status != "idle" {
+            for id in [row.runtimeSessionId, row.storedSessionId] where !id.isEmpty { ids.insert(id) }
+        }
+        return ids
+    }
+
+    /// Reads the live registry once more after `registryAbsenceSpan`, so a
+    /// turn whose chat a one-off read found absent is settled even with the
+    /// chat list's poll off screen. One at a time: a read already waiting
+    /// settles every absence seen meanwhile.
+    private func scheduleLiveTurnRegistryRecheck() {
+        guard liveTurnRegistryRecheck == nil else { return }
+        liveTurnRegistryRecheck = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(LiveTurnActivities.registryAbsenceSpan + 1))
+            guard let self, !Task.isCancelled else { return }
+            // Cleared first, so this read can ask for the next one.
+            self.liveTurnRegistryRecheck = nil
+            await self.refreshLiveSessionStatuses()
+        }
+    }
+
     /// `session.active_list` rows are the gateway's live registry: every row
     /// naming both a runtime and a stored id is fresh authoritative routing
     /// evidence (the same authority class as a catalog snapshot), recorded
@@ -15909,6 +16127,10 @@ final class AppState: ObservableObject {
                 liveSessionStatusIndex = index
                 liveSessionStatusProfile = profile
             }
+        }
+        // Lock Screen progress of a turn that ended unseen (#605).
+        if liveTurnActivitiesRegistrySnapshot(Self.liveTurnSessionIDs(rows), profile, activeDashboardID?.uuidString) {
+            scheduleLiveTurnRegistryRecheck()
         }
         for row in rows {
             conversationIdentityIndex.recordAuthoritative(
@@ -16393,13 +16615,25 @@ final class AppState: ObservableObject {
     /// - transient read failure → the authoritative liveness adoption with
     ///   the transcript-freshness marker SET: freshness is unresolved, never
     ///   claimed current, and the next authoritative source re-confirms.
+    /// `resumeFallbackAllowed`, when given, is asked before any fallback to
+    /// a resume; a no settles the boundary instead and returns false (the
+    /// open chat's read of another device's turn, ChatSync).
+    @discardableResult
     private func reconcileForegroundCrossSurfaceActivity(
         livenessIsRunning: Bool,
         requestedSessionID: String,
         probeRow: LiveSessionStatus,
         reconciliationToken token: UUID,
-        automaticWorkToken: ChatResumeAutomaticWorkToken?
-    ) async {
+        automaticWorkToken: ChatResumeAutomaticWorkToken?,
+        resumeFallbackAllowed: (@MainActor () async -> Bool)? = nil
+    ) async -> Bool {
+        /// Whether a fallback resume may run; settles the boundary when not.
+        func mayResume() async -> Bool {
+            guard let resumeFallbackAllowed else { return true }
+            if await resumeFallbackAllowed() { return true }
+            settleForegroundBoundary(token, automaticWorkToken: automaticWorkToken)
+            return false
+        }
         let recoveryPurpose = foregroundRecoveryPurpose
         let bridge = dashboardTicketBridge
         let localFrontier = durablePersistedRowIDs
@@ -16419,7 +16653,7 @@ final class AppState: ObservableObject {
         guard foregroundRefreshOwnsReconciliation(token),
               automaticChatResumeWorkIsCurrent(automaticWorkToken) else {
             settleReconciliation(token)
-            return
+            return true
         }
         // The composer stays enabled during the bounded read: a submit that
         // landed mid-read appends an optimistic row and would invert the
@@ -16430,12 +16664,13 @@ final class AppState: ObservableObject {
             lifecycleLog.notice(
                 "Foreground freshness: session=\(requestedSessionID, privacy: .public) transcript moved during read → bounded resume refresh"
             )
+            guard await mayResume() else { return false }
             await syncSession(
                 purpose: recoveryPurpose,
                 using: token,
                 automaticWorkToken: automaticWorkToken
             )
-            return
+            return true
         }
         switch foregroundFreshnessVerdict(
             outcome,
@@ -16462,7 +16697,7 @@ final class AppState: ObservableObject {
                     using: token,
                     automaticWorkToken: automaticWorkToken
                 )
-                return
+                return true
             }
             lifecycleLog.notice(
                 "Foreground freshness: probe=idle session=\(requestedSessionID, privacy: .public) verdict=advanced rows=\(newRows.count, privacy: .public) → merge persisted advancement"
@@ -16526,6 +16761,7 @@ final class AppState: ObservableObject {
             lifecycleLog.notice(
                 "Foreground freshness: probe=\(livenessIsRunning ? "running" : "idle", privacy: .public) session=\(requestedSessionID, privacy: .public) verdict=source-unavailable → single authoritative resume"
             )
+            guard await mayResume() else { return false }
             await syncSession(
                 purpose: recoveryPurpose,
                 using: token,
@@ -16536,12 +16772,14 @@ final class AppState: ObservableObject {
             lifecycleLog.notice(
                 "Foreground freshness: probe=\(livenessIsRunning ? "running" : "idle", privacy: .public) session=\(requestedSessionID, privacy: .public) verdict=inconclusive → bounded resume refresh"
             )
+            guard await mayResume() else { return false }
             await syncSession(
                 purpose: recoveryPurpose,
                 using: token,
                 automaticWorkToken: automaticWorkToken
             )
         }
+        return true
     }
 
     /// Ordering evidence for the locally-owned optimistic tail, captured by
@@ -16771,6 +17009,7 @@ final class AppState: ObservableObject {
             )
             sessions = allSessions.filter { $0.source != .cron }
             cronSessions = allSessions.filter { $0.source == .cron }
+            chatListCatalogFreshness.noteLoaded(at: chatSyncNow())
             savedChatListReplacedByLiveList(newestPageOnly: false, dashboardID: dashboardID)
             sessionCatalogLoadState.markLoaded(SessionCatalogOwner(dashboardID: dashboardID, profile: profile))
             refreshVoiceSessionTags()
@@ -16828,8 +17067,11 @@ final class AppState: ObservableObject {
     /// chat reads it again: a conversation started there is listed once its
     /// first turn is stored, and an older one shows its latest turn. One
     /// read at a time; a return during a read asks for one more after it.
-    func refreshCatalogAfterLeavingChat() {
+    /// The list's own reads (ChatSync) pass `reportingFailure: false`: one
+    /// nobody asked for puts up no banner.
+    func refreshCatalogAfterLeavingChat(reportingFailure: Bool = true) {
         guard isConnected, client != nil || sessionCatalogLoaderOverride != nil else { return }
+        if reportingFailure { leaveCatalogRefreshReportsFailure = true }
         guard leaveCatalogRefreshTask == nil else {
             leaveCatalogRefreshPending = true
             return
@@ -16839,7 +17081,13 @@ final class AppState: ObservableObject {
             repeat {
                 // A return asked for before this read starts is covered by it.
                 self.leaveCatalogRefreshPending = false
-                await self.loadSessions()
+                let reportsFailure = self.leaveCatalogRefreshReportsFailure
+                self.leaveCatalogRefreshReportsFailure = false
+                await self.loadSessions(
+                    forceRefresh: false,
+                    requiredViewportTransitionGeneration: nil,
+                    reportsFailure: reportsFailure
+                )
             } while self.leaveCatalogRefreshPending && !Task.isCancelled
             self.leaveCatalogRefreshTask = nil
         }
@@ -16857,6 +17105,257 @@ final class AppState: ObservableObject {
         sessionCatalogCache.removeValue(forKey: sessionKey)
         sessionCatalogCache.removeValue(forKey: cronKey)
         await loadSessions(forceRefresh: true)
+    }
+
+    // MARK: - One chat on two devices
+
+    /// The Chats list's poll (every 4 s while it shows): the live registry,
+    /// then what it says about the list and the open chat behind it. A chat
+    /// the registry has and the list doesn't, one started on another device,
+    /// reads the catalog again; so does a list left on screen for 30 s, for
+    /// renames and deletions made elsewhere. Reads go through the coalesced
+    /// read Back uses.
+    func chatListPollTick() async {
+        // Off screen (voice or CarPlay keep the app running) nothing reads.
+        guard isSceneActive, isConnected else { return }
+        await refreshLiveSessionStatuses()
+        if let snapshot = freshActiveListSnapshot(maxAge: 2) {
+            noteActiveListForChatList(snapshot.rows)
+            // The open chat shows beside the list in the persistent iPad
+            // sidebar, and is covered by it otherwise.
+            observeOpenChat(in: snapshot, chatVisible: !showSidebar)
+        }
+        if chatListCatalogFreshness.shouldRead(olderThan: ChatListCatalogFreshness.fallbackInterval, now: chatSyncNow()) {
+            refreshCatalogAfterLeavingChat(reportingFailure: false)
+        }
+    }
+
+    /// Back in the app with the list on screen: a read older than 10 s is
+    /// read again. (A return from the background also syncs the chat, which
+    /// reads the catalog too; an overlay dip doesn't.)
+    func chatListBecameActive() {
+        if chatListCatalogFreshness.shouldRead(olderThan: ChatListCatalogFreshness.sceneActiveInterval, now: chatSyncNow()) {
+            refreshCatalogAfterLeavingChat(reportingFailure: false)
+        }
+    }
+
+    private func noteActiveListForChatList(_ rows: [LiveSessionStatus]) {
+        var listed = Set<String>()
+        for session in sessions + cronSessions + archivedSessions {
+            listed.insert(session.id)
+            if let stored = session.storedSessionId { listed.insert(stored) }
+            if let root = session.lineageRootId { listed.insert(root) }
+            listed.formUnion(session.alternateIds)
+        }
+        let unlisted = rows.filter { !$0.storedSessionId.isEmpty && !listed.contains($0.storedSessionId) }
+        // Keyed by the row's state too: a chat created on another device is
+        // live before its first message makes it listable, and that message
+        // (working, then a new count) asks again.
+        let keys = Set(unlisted.map { "\($0.storedSessionId)|\($0.status)|\($0.messageCount ?? -1)" })
+        guard chatListCatalogFreshness.shouldRead(forUnlisted: keys, now: chatSyncNow()) else { return }
+        sessionCatalogLog.notice(
+            "Chat list: \(unlisted.count, privacy: .public) live chat(s) not listed yet; reading the catalog again"
+        )
+        refreshCatalogAfterLeavingChat(reportingFailure: false)
+    }
+
+    /// The open chat's check while it is on screen (ChatView, every few
+    /// seconds and on each turn edge). A turn running here that streamed
+    /// nothing for 20 s, or an idle chat, is checked against the registry;
+    /// a snapshot the list read in the last 5 s is reused.
+    func openChatSyncTick() async {
+        guard isSceneActive, isConnected, let client,
+              client !== activeListUnsupportedClient,
+              let local = openChatLocalTurn() else {
+            setActiveChatRepliesElsewhere(false)
+            return
+        }
+        let due = openChatSync.checkDue(local, now: chatSyncNow())
+        // Another chat starts over without the label.
+        setActiveChatRepliesElsewhere(openChatSync.repliesElsewhere)
+        guard due else { return }
+        if freshActiveListSnapshot(maxAge: 5) == nil {
+            await refreshLiveSessionStatuses()
+        }
+        guard let snapshot = freshActiveListSnapshot(maxAge: 5) else { return }
+        observeOpenChat(in: snapshot, chatVisible: true)
+    }
+
+    private func freshActiveListSnapshot(maxAge: TimeInterval) -> (rows: [LiveSessionStatus], at: Date)? {
+        guard let latestActiveList, latestActiveList.profile == activeProfile,
+              let client, latestActiveList.client == ObjectIdentifier(client),
+              chatSyncNow().timeIntervalSince(latestActiveList.at) < maxAge else { return nil }
+        return (latestActiveList.rows, latestActiveList.at)
+    }
+
+    /// The open chat as this device holds it, or nil when there is none the
+    /// registry can speak for: a Bot Chat lives in another profile's
+    /// registry, a room isn't one session, and a chat still syncing or
+    /// reconnecting has no settled local state to compare.
+    private func openChatLocalTurn() -> OpenChatLocalTurn? {
+        guard let sessionId = activeSessionId, !sessionId.isEmpty,
+              activeRoomSurface == nil,
+              botConversationProfile(for: sessionId) == nil,
+              turnState == .idle || turnState == .running else { return nil }
+        var ownTexts: [String] = []
+        var hasRunningTool = false
+        // The running turn's own rows: back to its user message.
+        for message in messages.reversed() {
+            if message.role == .tool, message.tool?.status == .running { hasRunningTool = true }
+            if message.role == .assistant { ownTexts.append(message.content) }
+            if message.role == .user {
+                ownTexts.append(message.content)
+                if !message.isSteer { break }
+            }
+        }
+        ownTexts.append(streamingBuffer)
+        return OpenChatLocalTurn(
+            sessionID: sessionId,
+            isRunning: turnState.isRunning,
+            hasRunningTool: turnState.isRunning && hasRunningTool,
+            ownTexts: ownTexts
+        )
+    }
+
+    private func observeOpenChat(in snapshot: (rows: [LiveSessionStatus], at: Date), chatVisible: Bool) {
+        // A read or a reconciliation already under way owns the transcript.
+        guard let local = openChatLocalTurn() else {
+            setActiveChatRepliesElsewhere(false)
+            return
+        }
+        guard openChatSyncRead == nil, reconciliation == nil, !isChatRefreshing else { return }
+        let rows = openChatRegistryRows(snapshot.rows, sessionID: local.sessionID)
+        let action = openChatSync.observe(
+            Self.openChatRegistryRow(rows),
+            snapshotAt: snapshot.at,
+            local: local,
+            now: chatSyncNow(),
+            chatVisible: chatVisible
+        )
+        setActiveChatRepliesElsewhere(openChatSync.repliesElsewhere)
+        switch action {
+        case .none:
+            break
+        case .settleTurn:
+            lifecycleLog.notice(
+                "Open chat: turn silent here and not running on the server → re-read session=\(local.sessionID, privacy: .public)"
+            )
+            startOpenChatSyncRead(sessionID: local.sessionID, expectsRunning: true) { appState in
+                // Nothing runs, so this resume takes no stream from another
+                // device; it brings the reply and settles the turn. Asked
+                // once more right before, since a new turn may have begun.
+                guard await appState.openChatIsIdleOnServer(local.sessionID) else { return }
+                await appState.syncSession(purpose: .preserveCurrent, using: nil, automaticWorkToken: nil)
+            }
+        case .readNewRows:
+            guard let row = rows.first(where: { !$0.isRunning }) ?? rows.first else { return }
+            lifecycleLog.notice(
+                "Open chat: a turn ran elsewhere → read its rows session=\(local.sessionID, privacy: .public)"
+            )
+            startOpenChatSyncRead(sessionID: local.sessionID, expectsRunning: false) { appState in
+                // The bounded, read-only tail read a return from the
+                // background uses: new rows merge in, and only an
+                // inconclusive read falls back to resuming the idle chat.
+                let token = appState.beginReconciliation()
+                let resumed = await appState.reconcileForegroundCrossSurfaceActivity(
+                    livenessIsRunning: false,
+                    requestedSessionID: local.sessionID,
+                    probeRow: row,
+                    reconciliationToken: token,
+                    automaticWorkToken: nil,
+                    // A read that would end in a resume asks the registry
+                    // first: a turn begun since would lose its stream.
+                    resumeFallbackAllowed: { await appState.openChatIsIdleOnServer(local.sessionID) }
+                )
+                if !resumed { appState.openChatSync.readCalledOff() }
+            }
+        }
+    }
+
+    private func startOpenChatSyncRead(
+        sessionID: String,
+        expectsRunning: Bool,
+        _ read: @escaping @MainActor (AppState) async -> Void
+    ) {
+        let readID = UUID()
+        openChatSyncReadID = readID
+        openChatSyncRead = Task { @MainActor [weak self] in
+            guard let self else { return }
+            // Clears its own fence only.
+            defer {
+                if self.openChatSyncReadID == readID {
+                    self.openChatSyncRead = nil
+                    self.openChatSyncReadID = nil
+                }
+            }
+            // The chat or its turn changed since the snapshot: nothing to do.
+            guard self.activeSessionId == sessionID, self.reconciliation == nil,
+                  self.turnState == (expectsRunning ? .running : .idle) else { return }
+            await read(self)
+        }
+    }
+
+    /// Every registry row of the open chat: a voice runtime and the chat's
+    /// own can share its ids.
+    private func openChatRegistryRows(_ rows: [LiveSessionStatus], sessionID: String) -> [LiveSessionStatus] {
+        let acceptedIDs = acceptedIdentitySessionIDs(forRequested: sessionID)
+        return rows.filter {
+            acceptedIDs.contains($0.runtimeSessionId) || acceptedIDs.contains($0.storedSessionId)
+        }
+    }
+
+    /// One view of the chat's rows: running if any runs, starting if any
+    /// starts, the running row's preview, and the highest count.
+    nonisolated static func openChatRegistryRow(_ rows: [LiveSessionStatus]) -> OpenChatRegistryRow? {
+        guard !rows.isEmpty else { return nil }
+        let running = rows.first(where: \.isRunning)
+        return OpenChatRegistryRow(
+            isRunning: running != nil,
+            isStarting: running == nil && rows.contains { $0.status == "starting" },
+            messageCount: rows.compactMap(\.messageCount).max(),
+            preview: (running ?? rows[0]).preview
+        )
+    }
+
+    /// A fresh registry read: nothing of the open chat runs or starts.
+    private func openChatIsIdleOnServer(_ sessionID: String) async -> Bool {
+        guard let client else { return false }
+        // A send here during the read changes the local turn; the idle
+        // answer is then stale, and a resume would take the new turn's stream.
+        let turnStateBefore = turnState
+        let streamEventBefore = openChatSync.lastStreamEventAt
+        let rows: [LiveSessionStatus]
+        do {
+            if let probeActiveSessions = chatResumeLifecycleOperations.probeActiveSessions {
+                rows = try await probeActiveSessions(client)
+            } else {
+                rows = try await client.activeSessions()
+            }
+        } catch {
+            return false
+        }
+        guard self.client === client, activeSessionId == sessionID,
+              turnState == turnStateBefore,
+              openChatSync.lastStreamEventAt == streamEventBefore else { return false }
+        return !openChatRegistryRows(rows, sessionID: sessionID).contains {
+            $0.isRunning || $0.status == "starting"
+        }
+    }
+
+    /// This device sent something in the open chat (a turn, a steer, a
+    /// command): the registry's count moving next is its own doing.
+    private func noteOpenChatSentHere() {
+        openChatSync.noteSentHere()
+    }
+
+    private func noteOpenChatStreamEvent() {
+        openChatSync.noteStreamEvent(at: chatSyncNow())
+        setActiveChatRepliesElsewhere(false)
+    }
+
+    private func setActiveChatRepliesElsewhere(_ value: Bool) {
+        // Assigned only on a change: every publish redraws the chat.
+        if activeChatRepliesElsewhere != value { activeChatRepliesElsewhere = value }
     }
 
     /// Desktop treats archived conversations as a separate, server-backed
@@ -19833,6 +20332,30 @@ final class AppState: ObservableObject {
         onBusy: (() -> Void)? = nil
     ) async -> Bool {
         let submissionContext = context ?? composerSubmissionContext()
+        let sent = await performComposerSubmission(
+            text: text,
+            attachments: attachments,
+            submissionContext: submissionContext,
+            onBusy: onBusy
+        )
+        // Only something Hermes took moves the registry's count; a refused
+        // or busy-diverted submission leaves another device's turn due. A
+        // slash command reports true even when it ran only here, so it
+        // marks nothing: missing a mark costs one extra read, a wrong mark
+        // hides the other device's turn.
+        let isSlashCommand = attachments.isEmpty && Self.parseSlashCommand(text) != nil
+        if sent, !isSlashCommand, activeSessionId == submissionContext.sessionID {
+            noteOpenChatSentHere()
+        }
+        return sent
+    }
+
+    private func performComposerSubmission(
+        text: String,
+        attachments: [Attachment],
+        submissionContext: ComposerSubmissionContext,
+        onBusy: (() -> Void)?
+    ) async -> Bool {
         guard isCurrentComposerSubmission(submissionContext) else { return false }
 
         // The gateway is already idle while the final visual tail drains.
@@ -20936,7 +21459,8 @@ final class AppState: ObservableObject {
                         profile: activeProfile,
                         profileName: profileDisplayName(activeProfile),
                         glowHex: profileGlowColors()[activeProfile]?.hex
-                            ?? profileGlowTint(activeProfile).flatMap { ProfileGlowRGB(UIColor($0).resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark)))?.hex }
+                            ?? profileGlowTint(activeProfile).flatMap { ProfileGlowRGB(UIColor($0).resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark)))?.hex },
+                        dashboardID: activeDashboardID?.uuidString
                     )
                 case .queued:
                     // Hermes normally drains queued input as a later full turn,
@@ -23016,10 +23540,21 @@ final class AppState: ObservableObject {
     }
 
     private func isUnsupportedRedirect(_ error: RpcError) -> Bool {
-        let message = error.message.lowercased()
-        return error.code == 4010
+        Self.isUnsupportedRedirect(code: error.code, message: error.message)
+    }
+
+    /// A gateway without `session.redirect` (Hermes before the active-turn
+    /// redirect) answers JSON-RPC "method not found": code -32601 with
+    /// "unknown method: session.redirect" on the TUI gateway.
+    nonisolated static func isUnsupportedRedirect(code: Int?, message: String) -> Bool {
+        let message = message.lowercased()
+        return code == 4010
+            || code == -32601
             || message.contains("does not support active-turn redirect")
             || message.contains("method not found")
+            // The TUI gateway's wording ("unknown method: session.redirect"):
+            // only when it names this method.
+            || (message.contains("unknown method") && message.contains("session.redirect"))
     }
 
     private func isSessionNotFound(_ error: RpcError) -> Bool {
@@ -25622,6 +26157,7 @@ final class AppState: ObservableObject {
             let config = try await dashboardTicketBridge.requestJSON(path: dashboardPath("/api/config", profile: profile))
             guard profile == activeProfile else { return }
             let display = config["display"] as? [String: Any] ?? [:]
+            profileTimeZoneSetting = (profile, config[ProfileTimeZone.configKey] as? String ?? "")
             displayPreferences = ProfileDisplayPreferences(
                 showReasoning: display["show_reasoning"] as? Bool ?? true,
                 showToolProgress: display["tool_progress"] as? String != "off",
@@ -25630,7 +26166,14 @@ final class AppState: ObservableObject {
         } catch {
             guard profile == activeProfile else { return }
             displayPreferences = ProfileDisplayPreferences()
+            profileTimeZoneSetting = nil
         }
+    }
+
+    /// The active profile's `timezone` value, when Conduit has read it.
+    var activeProfileTimeZoneSetting: String? {
+        guard let setting = profileTimeZoneSetting, profilesMatch(setting.profile, activeProfile) else { return nil }
+        return setting.value
     }
 
     func loadProfileSettings(keys: [String]) async -> [String: ProfileSettingValue] {
@@ -25835,6 +26378,9 @@ final class AppState: ObservableObject {
             }
             try await updateProfileConfig(profile: profile) { [weak self] config in
                 self?.setProfileSettingValue(value, in: &config, key: key)
+            }
+            if key == ProfileTimeZone.configKey, let zone = value.textValue {
+                profileTimeZoneSetting = (profile, zone)
             }
             if key == "approvals.mode", let mode = value.textValue?.lowercased(), profile == activeProfile {
                 // Mirror the saved profile mode immediately and re-resolve the
@@ -26540,6 +27086,7 @@ final class AppState: ObservableObject {
         let streamSessionId = sessionID(for: event)
         guard eventBelongsToActiveSession(streamSessionId) else { return }
         defer { schedulePresentationCacheFlush(for: streamSessionId) }
+        noteOpenChatStreamEvent()
         LiveTurnActivities.shared.observe(event, sessionID: streamSessionId)
         if let signal = ResponseHapticPolicy.signal(for: event) {
             applyResponseHapticSignal(signal)
@@ -28981,6 +29528,36 @@ final class AppState: ObservableObject {
         )
     }
 
+    /// What a Watch call on Hermes Voice starts with. The host's own speech
+    /// server listens and speaks, and each turn runs in a Hermes chat of the
+    /// call's own (conduit_push's speech_server engine), with the profile's
+    /// model, tools, memory and persona: no briefing, greeting or voice to
+    /// send. Not saved to voice history: the call is that chat.
+    func prepareWatchHermesVoiceCall() async throws -> WatchBridgePlan {
+        if isSceneActive, !PhoneScenePresence.isInForeground {
+            isSceneActive = false
+            publishVoiceRuntimeGates()
+        }
+        guard await connectForWatchDirectCall(timeout: .seconds(20)) else {
+            throw WatchDirectPrepareError(WatchVoiceStartFailure.hermesUnreachable)
+        }
+        guard !isLiveVoiceCallActive else { throw WatchDirectPrepareError(WatchVoiceStartFailure.callRunning) }
+        let connection = watchDirectConnection
+        let preferences = loadVoiceProfilePreferences(profile: activeProfile)
+        return WatchBridgePlan(
+            briefing: "",
+            greeting: nil,
+            voice: nil,
+            connection: connection,
+            saveCalls: false,
+            memoryIncluded: false,
+            personalityIncluded: false,
+            jobOptions: [:],
+            endPhrases: preferences.resolvedSpokenEndConversationPhrases,
+            jobProfiles: []
+        )
+    }
+
     /// What a Watch call to Grok starts with: the setup this profile's
     /// Grok Live call gets on the phone. Unlike Gemini there's no token:
     /// the Hermes host holds xAI's session, on its own xAI sign-in, and the
@@ -29907,9 +30484,15 @@ enum KeychainHelper {
     /// Clears the scoped connection ticket AND the dashboard's durable cookie
     /// mirror, mirroring the legacy `clearConnection()` pairing.
     static func clearConnection(dashboardID: UUID) {
+        clearSavedSession(dashboardID: dashboardID)
+        delete(account: scopedAccount(nativeOAuthTokensKey, dashboardID: dashboardID))
+    }
+
+    /// Clears the scoped connection ticket and cookie mirror, keeping the
+    /// dashboard's native grant.
+    static func clearSavedSession(dashboardID: UUID) {
         delete(account: scopedAccount(key, dashboardID: dashboardID))
         delete(account: scopedAccount(dashboardCookieKey, dashboardID: dashboardID))
-        delete(account: scopedAccount(nativeOAuthTokensKey, dashboardID: dashboardID))
     }
 
     static func saveNativeOAuthTokens(_ tokens: NativeOAuthTokenSet, dashboardID: UUID) {
