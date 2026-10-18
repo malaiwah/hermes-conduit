@@ -169,6 +169,8 @@ final class AVSpeechPlaybackService: NSObject, SpeechPlaybackService {
             throw error
         }
         player.play()
+        // The engine starting can move the route: a reply goes to the speaker.
+        coordinator.ensureConversationSpeaker()
         progress = SpeechPlaybackProgress(rate: Double(rate))
         isPlaying = true
     }
@@ -250,6 +252,7 @@ final class AVSpeechPlaybackService: NSObject, SpeechPlaybackService {
             player.prepareToPlay()
             guard player.play() else { throw VoiceAudioError.unavailable(AppLocalization.string("Could not play Hermes fallback speech.")) }
             encodedPlayer = player
+            coordinator.ensureConversationSpeaker()
             isPlaying = true
         } catch {
             releaseOwnership()
