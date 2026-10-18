@@ -517,7 +517,7 @@ final class ChatScrollHostedTests: XCTestCase {
     /// steps draw nothing, so they must not add the transcript's row
     /// spacing each: the reply sits one spacing below the line, not seven.
     func testACollapsedRunOfStepsSitsOneRowSpacingAboveTheReply() throws {
-        let steps = (0..&lt;7).map { index in
+        let steps = (0..<7).map { index in
             ChatMessage(
                 id: "step-\(index)",
                 role: .tool,

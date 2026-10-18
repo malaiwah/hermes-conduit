@@ -332,11 +332,11 @@ struct ChatStepPlacement: Equatable {
         preferences: ProfileDisplayPreferences,
         isBusy: Bool,
         disclosure: ChatRowDisclosure
-    ) -&gt; Bool {
+    ) -> Bool {
         let visible = group.visibleMembers(showReasoning: preferences.showReasoning, showTools: preferences.showToolProgress)
         guard let position = visible.firstIndex(where: { $0.messageID == messageID }) else { return false }
-        guard visible.count &gt;= 2, position &gt; 0 else { return true }
-        let live = group.isTrailing &amp;&amp; isBusy
+        guard visible.count >= 2, position > 0 else { return true }
+        let live = group.isTrailing && isBusy
         return disclosure.isGroupExpanded(group.id, default: live || preferences.expandToolsByDefault)
     }
 }

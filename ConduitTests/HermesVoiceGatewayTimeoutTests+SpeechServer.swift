@@ -254,7 +254,7 @@ extension HermesVoiceGatewayTimeoutTests {
         let socket = SpeechServerSocket()
         let stream = SpeechServerSpeechStream(socket: socket, onStart: { _ in }, onPCM16: { _, _ in })
         try await stream.append("The capital is **Québec**. More")
-        let sent = await Self.speechServerEventually { socket.sentTypes.count &gt;= 3 }
+        let sent = await Self.speechServerEventually { socket.sentTypes.count >= 3 }
         XCTAssertTrue(sent)
         let item = try XCTUnwrap(socket.sentObjects[1]["item"] as? [String: Any])
         let content = try XCTUnwrap(item["content"] as? [[String: Any]])

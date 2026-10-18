@@ -126,7 +126,7 @@ struct ChatView: View {
         _ = stepToggleRevision
         let preferences = appState.displayPreferences
         let isBusy = appState.isBusy
-        let draws: (ChatMessageScrollTarget) -&gt; Bool = { target in
+        let draws: (ChatMessageScrollTarget) -> Bool = { target in
             target.step?.drawsRow(
                 messageID: target.id,
                 preferences: preferences,
