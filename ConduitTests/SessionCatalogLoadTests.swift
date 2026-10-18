@@ -96,7 +96,19 @@ final class SessionCatalogLoadTests: XCTestCase {
         for phase: SessionCatalogLoadPhase in [.notLoaded, .loaded, .failed("x")] {
             XCTAssertEqual(SessionListPlaceholder.resolve(hasRows: true, hasOfflineCopy: false, catalogPhase: phase, isRefreshing: false), .none)
             XCTAssertEqual(SessionListPlaceholder.resolve(hasRows: false, hasOfflineCopy: true, catalogPhase: phase, isRefreshing: false), .none)
+            // Listed rows a search or filter matched none of: that list is
+            // empty, never loading.
+            XCTAssertEqual(SessionListPlaceholder.resolve(hasRows: false, hasOfflineCopy: false, catalogPhase: phase, isRefreshing: false, filteredOutRows: true), .empty)
         }
+    }
+
+    /// A read cancelled under it says nothing about the catalog: still
+    /// loading, never "Couldn't Load Chats".
+    func testACancelledReadIsNotAFailure() async {
+        let appState = makeAppState(answer: { .failure(CancellationError()) })
+        await appState.loadSessions()
+        XCTAssertEqual(appState.sessionCatalogPhase, .notLoaded)
+        XCTAssertEqual(placeholder(appState), .loading)
     }
 
     func testLoadStateBelongsToOneDashboardProfile() {

@@ -761,7 +761,7 @@ struct V2ChatsView: View, Equatable {
             }
 
             if layout.loadingState {
-                ProgressView("Loading chats…")
+                ProgressView(AppLocalization.string("Loading chats…"))
                     .frame(maxWidth: .infinity, minHeight: 140)
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -776,7 +776,8 @@ struct V2ChatsView: View, Equatable {
                         hasRows: false,
                         hasOfflineCopy: false,
                         catalogPhase: appState.sessionCatalogPhase,
-                        isRefreshing: appState.isRefreshingSessionCatalog
+                        isRefreshing: appState.isRefreshingSessionCatalog,
+                        filteredOutRows: !appState.listedSessions.isEmpty || !appState.listedCronSessions.isEmpty
                     ),
                     emptyTitle: selection.emptyStateFilter.emptyTitle,
                     emptyDescription: isSearching

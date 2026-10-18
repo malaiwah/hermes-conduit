@@ -377,7 +377,7 @@ struct SessionList: View {
                     projectContent(hasPinnedSessions: !pinned.isEmpty)
                 }
                 if layout.loadingState {
-                    ProgressView("Loading chats…")
+                    ProgressView(AppLocalization.string("Loading chats…"))
                         .frame(maxWidth: .infinity, minHeight: 140)
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
@@ -388,7 +388,8 @@ struct SessionList: View {
                             hasRows: false,
                             hasOfflineCopy: false,
                             catalogPhase: appState.sessionCatalogPhase,
-                            isRefreshing: appState.isRefreshingSessionCatalog
+                            isRefreshing: appState.isRefreshingSessionCatalog,
+                            filteredOutRows: !appState.listedSessions.isEmpty || !appState.listedCronSessions.isEmpty
                         ),
                         emptyTitle: statusFilter?.emptyTitle
                             ?? (selectedSource == nil ? AppLocalization.string("No Sessions") : AppLocalization.string("No \(selectedSource!.label) Sessions")),
@@ -398,6 +399,8 @@ struct SessionList: View {
                         emptySystemImage: statusFilter?.emptySystemImage ?? "tray",
                         retry: { Task { await appState.refreshSessionCatalog() } }
                     )
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
 
                 let sections = nestedSessionSections

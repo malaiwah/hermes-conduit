@@ -72,9 +72,13 @@ enum SessionListPlaceholder: Equatable {
         hasRows: Bool,
         hasOfflineCopy: Bool,
         catalogPhase: SessionCatalogLoadPhase,
-        isRefreshing: Bool
+        isRefreshing: Bool,
+        filteredOutRows: Bool = false
     ) -> SessionListPlaceholder {
         if hasRows || hasOfflineCopy { return .none }
+        // Rows are listed (live or saved) and a search or filter matched
+        // none of them: that list is empty, whatever the catalog's state.
+        if filteredOutRows { return .empty }
         switch catalogPhase {
         case .loaded:
             return .empty

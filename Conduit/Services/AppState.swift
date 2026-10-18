@@ -873,15 +873,21 @@ final class AppState: ObservableObject {
         let owner = sessionCatalogOwner
         if let running = sessionCatalogFirstRead, running.owner == owner {
             await running.task.value
+            // A read a reconnect left behind settles nothing: read again,
+            // for this connection.
+            if sessionCatalogPhase == .notLoaded, sessionCatalogFirstRead == nil {
+                await loadSessionCatalogIfNeeded()
+            }
             return
         }
+        let id = UUID()
         let task = Task<Void, Never> { @MainActor [weak self] in
             guard let self else { return }
             await self.loadSessions()
+            if self.sessionCatalogFirstRead?.id == id { self.sessionCatalogFirstRead = nil }
         }
-        sessionCatalogFirstRead = SessionCatalogFirstRead(owner: owner, task: task)
+        sessionCatalogFirstRead = SessionCatalogFirstRead(owner: owner, id: id, task: task)
         await task.value
-        if sessionCatalogFirstRead?.owner == owner { sessionCatalogFirstRead = nil }
     }
 
     /// The list's own first catalog read while it runs.
@@ -889,6 +895,7 @@ final class AppState: ObservableObject {
 
     private struct SessionCatalogFirstRead {
         let owner: SessionCatalogOwner
+        let id: UUID
         let task: Task<Void, Never>
     }
     @Published var activeSessionId: String? {
@@ -16804,6 +16811,9 @@ final class AppState: ObservableObject {
                 guard let activeClient, self.client === activeClient else { return false }
             }
             guard requiredViewportTransitionGeneration.map({ chatViewportTransitionIsCurrent(generation: $0) }) ?? true else { return false }
+            // A read cancelled under it (a pull to refresh the list left)
+            // says nothing about the catalog: the next showing reads again.
+            if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled { return false }
             guard reportsFailure else { return false }
             errorMessage = AppLocalization.string("Failed to load sessions: \(UserFacingError.message(for: error))")
             sessionCatalogLoadState.markFailed(
