@@ -144,6 +144,8 @@ final class CronScheduleTextTests: XCTestCase {
 
     func testAnOverdueRunSaysHowLongAgo() {
         XCTAssertEqual(runText("2026-10-17T08:40:00-04:00", now: "2026-10-17T08:52:00-04:00"), "12 minutes ago")
+        // Days overdue read in days, not hours.
+        XCTAssertEqual(runText("2026-10-14T08:52:00-04:00", now: "2026-10-17T08:52:00-04:00"), "3 days ago")
     }
 
     func testRunTimesParseHermesFormats() {

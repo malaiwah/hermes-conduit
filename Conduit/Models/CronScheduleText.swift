@@ -234,8 +234,11 @@ enum CronScheduleText {
             let components: DateComponents
             if magnitude < 90 * 60 {
                 components = DateComponents(minute: sign * max(1, Int((magnitude / 60).rounded())))
-            } else {
+            } else if magnitude < relativeHorizon {
                 components = DateComponents(hour: sign * Int((magnitude / 3_600).rounded()))
+            } else {
+                // Only an overdue run gets here: "3 days ago", not "72 hours ago".
+                components = DateComponents(day: sign * Int((magnitude / 86_400).rounded()))
             }
             return formatter.localizedString(from: components)
         }
