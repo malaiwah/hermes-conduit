@@ -160,7 +160,7 @@ final class GeminiLiveTokenClient: GeminiLiveTokenProviding, GeminiLiveWebSearch
         } catch {
             // Memory is extra context: the conversation still starts, but
             // the failure is logged rather than lost.
-            geminiLiveMemoryLogger.error("Hermes memory context failed: \(String(describing: error), privacy: .public)")
+            geminiLiveMemoryLogger.error("Hermes memory context failed: \(LogRedaction.describing(error), privacy: .public)")
             return nil
         }
     }
@@ -175,7 +175,7 @@ final class GeminiLiveTokenClient: GeminiLiveTokenProviding, GeminiLiveWebSearch
             geminiLiveMemoryLogger.notice("Hermes plugin has no personality route; Gemini Live starts without a persona")
             return nil
         } catch {
-            geminiLiveMemoryLogger.error("Hermes personality failed: \(String(describing: error), privacy: .public)")
+            geminiLiveMemoryLogger.error("Hermes personality failed: \(LogRedaction.describing(error), privacy: .public)")
             return nil
         }
     }

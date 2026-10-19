@@ -581,6 +581,8 @@ final class DashboardTicketBridge: NSObject {
     /// Cookies the dashboard set on requests sent without the page, newest
     /// last, so a rotated session cookie is the one sent next.
     var backgroundIssuedCookies: [HTTPCookie] = []
+    /// Sends a request without the page in place of URLSession. Test seam.
+    var loadWithoutPageForTesting: (@MainActor (URLRequest) async throws -> (Data, URLResponse))?
     /// Observes the hidden page's load lifecycle for AppState's connection
     /// timeline (#417). Every request waits on this page, so when it becomes
     /// ready is the first thing a slow launch needs to show.
@@ -865,9 +867,9 @@ final class DashboardTicketBridge: NSObject {
     /// Error contract: unusable page states (a failed or URL-less landing,
     /// a stalled engine) surface as `.notReady` so callers flow into the
     /// reload recovery; a sign-in landing or redirect (Hermes' /login, an
-    /// auth proxy's sign-in page, any other origin) surfaces as
-    /// `.signInRequired`. Direct callers should not expect `.requestFailed`
-    /// for these states.
+    /// auth proxy's sign-in page, any other origin), of the page or of the
+    /// request itself, surfaces as `.signInRequired`. Direct callers should
+    /// not expect `.requestFailed` for these states.
     func requestJSON(
         path: String,
         method: String = "GET",
@@ -914,7 +916,7 @@ final class DashboardTicketBridge: NSObject {
         let timeout = max(1_000, timeoutMilliseconds)
         let responseLimit = max(1_024, maxResponseBytes)
 
-        return try await withTaskCancellationHandler(operation: {
+        let response: [String: Any] = try await withTaskCancellationHandler(operation: {
             try await withCheckedThrowingContinuation { continuation in
                 guard !Task.isCancelled else {
                     continuation.resume(throwing: CancellationError())
@@ -948,11 +950,12 @@ final class DashboardTicketBridge: NSObject {
                 }
                 let script = """
                 (async function() {
+                    let redirectedTo = null;
                     try {
                         const requestBody = \(bodyLiteral);
                         const controller = new AbortController();
                         const timeout = setTimeout(() => controller.abort(), \(timeout));
-                        const response = await fetch(\(pathLiteral), {
+                        const send = (options) => fetch(\(pathLiteral), Object.assign({
                             method: \(methodLiteral),
                             credentials: 'include',
                             headers: requestBody === null
@@ -960,7 +963,37 @@ final class DashboardTicketBridge: NSObject {
                                 : { Accept: 'application/json', 'Content-Type': 'application/json' },
                             body: requestBody === null ? undefined : JSON.stringify(requestBody),
                             signal: controller.signal
-                        });
+                        }, options));
+                        // Redirects are followed only within the dashboard's
+                        // origin: the browser refuses a hop to another origin
+                        // (an auth proxy's sign-in host) before sending
+                        // anything there, and fails it like a network error.
+                        // So a failure is probed once, side-effect free (GET,
+                        // no body, redirect not followed): an opaque redirect
+                        // means the request was sent off the dashboard, which
+                        // is sign-in. Anything else keeps the first error.
+                        let response;
+                        try {
+                            response = await send({ redirect: 'follow', mode: 'same-origin' });
+                        } catch (error) {
+                            if (controller.signal.aborted) throw error;
+                            let probe = null;
+                            try {
+                                probe = await send({
+                                    method: 'GET', body: undefined,
+                                    headers: { Accept: 'application/json' },
+                                    redirect: 'manual', cache: 'no-store'
+                                });
+                            } catch (_) {}
+                            if (!probe || probe.type !== 'opaqueredirect') throw error;
+                            clearTimeout(timeout);
+                            window.webkit.messageHandlers['dashboard-response'].postMessage(JSON.stringify({
+                                type: 'dashboard-response', id: \(id), ok: false, status: 0,
+                                signInRedirect: true, error: String(error)
+                            }));
+                            return;
+                        }
+                        if (response.redirected) redirectedTo = response.url;
                         const declaredLength = Number(response.headers.get('content-length') || 0);
                         if (declaredLength > \(responseLimit)) throw new Error('response_too_large');
                         const text = await (async function() {
@@ -992,13 +1025,14 @@ final class DashboardTicketBridge: NSObject {
                         const normalizedBody = Array.isArray(body) ? { _array: body } : (body && typeof body === 'object' ? body : { value: body });
                         window.webkit.messageHandlers['dashboard-response'].postMessage(JSON.stringify({
                             type: 'dashboard-response', id: \(id), ok: response.ok,
-                            status: response.status, body: normalizedBody,
+                            status: response.status, body: normalizedBody, redirectedTo: redirectedTo,
                             error: !response.ok && body && typeof body === 'object'
                                 ? (body.error || body.message || body.detail) : null
                         }));
                     } catch (error) {
                         window.webkit.messageHandlers['dashboard-response'].postMessage(JSON.stringify({
-                            type: 'dashboard-response', id: \(id), ok: false, status: 0, error: String(error)
+                            type: 'dashboard-response', id: \(id), ok: false, status: 0,
+                            redirectedTo: redirectedTo, error: String(error)
                         }));
                     }
                 })();
@@ -1029,6 +1063,11 @@ final class DashboardTicketBridge: NSObject {
                 self?.cancelPendingRequest(id: id)
             }
         })
+        // An answer already on its way when the bridge was invalidated (a
+        // dashboard switch) is the old dashboard's: its caller would apply
+        // it to the dashboard now showing.
+        guard !isInvalidated else { throw DashboardTicketBridgeError.notReady }
+        return response
     }
 
     /// Cancels the Swift-side deadline and resumes the pending request, if
@@ -1332,6 +1371,20 @@ extension DashboardTicketBridge: WKScriptMessageHandler {
               let id = payload["id"] as? Int,
               let continuation = pendingRequests.removeValue(for: id) else { return }
         requestDeadlines.removeValue(forKey: id)?.cancel()
+
+        // The request was redirected to sign-in: off the dashboard's origin
+        // (the page refused to follow it and its probe saw the redirect), or
+        // to a sign-in page on it, whatever that page answered. Sign-in is
+        // required, as for requests sent without the page, never a network
+        // failure the reconnect loop retries forever.
+        if payload["signInRedirect"] as? Bool == true
+            || DashboardSignInRedirect.isSignIn(
+                (payload["redirectedTo"] as? String).flatMap(URL.init(string:)),
+                forDashboard: expectedURL
+            ) {
+            continuation.resume(throwing: DashboardTicketBridgeError.signInRequired)
+            return
+        }
 
         if payload["ok"] as? Bool == true {
             continuation.resume(returning: payload["body"] as? [String: Any] ?? [:])

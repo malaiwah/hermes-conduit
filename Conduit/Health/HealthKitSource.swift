@@ -292,7 +292,7 @@ final class HealthKitDataSource: HealthDataSource {
                 try await store.enableBackgroundDelivery(for: type, frequency: .hourly)
             } catch {
                 // Without it only foreground and background-refresh passes run.
-                Self.log.error("Health background delivery failed: \(error.localizedDescription, privacy: .public)")
+                Self.log.error("Health background delivery failed: \(LogRedaction.message(error), privacy: .public)")
             }
             if lock.withLock({ generation != mine }) {
                 // Stopped while this was being turned on. The stop may have

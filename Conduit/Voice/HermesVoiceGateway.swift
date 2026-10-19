@@ -6,7 +6,7 @@
 import Foundation
 import OSLog
 
-private let hermesSpeechFallbackLog = Logger(subsystem: "com.milim.conduit", category: "OnDeviceSpeech")
+private let hermesSpeechFallbackLog = Logger(subsystem: "com.milim.relay", category: "OnDeviceSpeech")
 
 @MainActor
 final class HermesVoiceGateway: VoiceGatewayService {

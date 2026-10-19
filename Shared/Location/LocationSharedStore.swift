@@ -103,12 +103,12 @@ enum LocationSharedStore {
                 try (folder as NSURL).setResourceValue(true, forKey: .isExcludedFromBackupKey)
             } catch {
                 // The write still goes: losing the data would be worse.
-                log.error("Location folder backup exclusion failed: \(error.localizedDescription, privacy: .public)")
+                log.error("Location folder backup exclusion failed: \(LogRedaction.message(error), privacy: .public)")
             }
             try JSONEncoder().encode(value).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             return true
         } catch {
-            log.error("Location \(url.lastPathComponent, privacy: .public) write failed: \(error.localizedDescription, privacy: .public)")
+            log.error("Location \(url.lastPathComponent, privacy: .public) write failed: \(LogRedaction.message(error), privacy: .public)")
             return false
         }
     }

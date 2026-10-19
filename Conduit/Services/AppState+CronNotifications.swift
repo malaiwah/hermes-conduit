@@ -44,7 +44,7 @@ extension AppState {
         } catch is CancellationError {
             return
         } catch {
-            cronNotificationsLogger.notice("Cron notifications not read: \(error.localizedDescription, privacy: .public)")
+            cronNotificationsLogger.notice("Cron notifications not read: \(LogRedaction.message(error), privacy: .public)")
         }
     }
 
@@ -96,7 +96,7 @@ extension AppState {
             }
             if !stillHere || seeded { refreshCronNotificationsAfterSave() }
             if error is CancellationError { return false }
-            cronNotificationsLogger.notice("Cron notifications not saved: \(error.localizedDescription, privacy: .public)")
+            cronNotificationsLogger.notice("Cron notifications not saved: \(LogRedaction.message(error), privacy: .public)")
             if stillHere {
                 errorMessage = AppLocalization.string("Could not change this job's notifications: \(UserFacingError.message(for: error))")
             }

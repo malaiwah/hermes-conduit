@@ -1819,8 +1819,8 @@ extension AppStateVoiceCapabilityTests {
         session.becomeReady()
         XCTAssertEqual(
             coordinator.controls,
-            CarPlayVoiceControls(isClassic: false, isMicrophoneMuted: false),
-            "a live call has no chat to continue, so Ready offers no New Chat"
+            CarPlayVoiceControls(isClassic: false, isMicrophoneMuted: false, canStopReply: false),
+            "a live call has no chat to continue, so Ready offers no New Chat, and GPT-Live stops when the driver speaks"
         )
 
         coordinator.toggleMicrophone()
@@ -2012,7 +2012,7 @@ extension AppStateVoiceCapabilityTests {
         let (controller, _) = await startMinimisableGPTLive(in: appState)
         XCTAssertTrue(appState.showGPTLiveSheet)
 
-        appState.releaseCarPlayGPTLive()
+        unplugCarPlay(from: appState, phoneScreenOn: true)
 
         XCTAssertTrue(controller.isActive, "the phone still presents it, as its sheet")
         XCTAssertTrue(appState.showGPTLiveSheet)
@@ -2028,9 +2028,23 @@ extension AppStateVoiceCapabilityTests {
         _ = appState.handleScenePhase(.background)
         XCTAssertTrue(controller.isActive, "a locked phone alone keeps the call")
 
-        appState.releaseCarPlayGPTLive()
+        unplugCarPlay(from: appState, phoneScreenOn: false)
 
         XCTAssertFalse(controller.isActive)
+    }
+
+    /// The car connects and then goes away through the coordinator, as the
+    /// scene delegate's disconnect delivers it (the selector test pins that
+    /// CarPlay reaches the delegate).
+    private func unplugCarPlay(from appState: AppState, phoneScreenOn: Bool) {
+        let coordinator = CarPlayVoiceCoordinator()
+        coordinator.appStateProvider = { appState }
+        coordinator.phoneScreenProvider = { phoneScreenOn }
+        coordinator.autoEstablishOnConnect = false
+        let spy = InterfacingSpy()
+        coordinator.handleConnect(spy)
+        coordinator.handleDisconnect()
+        withExtendedLifetime(spy) {}
     }
 
     func testCarPlayGoingAwayWhileLockedClearsTheBarOfACallThatStopped() async {
@@ -3800,6 +3814,44 @@ extension VoiceConversationControllerTests {
         }
         await settle(20)
         XCTAssertEqual(fake.created, 0, "\(fake.submissions)")
+        controller.stop()
+    }
+
+    /// "Cancel background jobs", then a hang-up before Hermes answered: the
+    /// answer (and every task the ended call left running) stays out of the
+    /// next call.
+    func testGPTLiveCancelAnswerFromAnEndedCallIsNotSpokenInTheNextCall() async {
+        let first = FakeGPTLiveSessionControl()
+        let second = FakeGPTLiveSessionControl()
+        var sessions = [first, second]
+        let client = FakeGPTLiveClient()
+        let fake = FakeVoiceJobBackend()
+        let supervisor = VoiceBackgroundJobSupervisor(backend: fake.backend, pollInterval: .seconds(3_600))
+        let controller = GPTLiveConversationController(
+            makeSession: { sessions.removeFirst() },
+            availability: { try await client.availability() },
+            briefing: { "[rules]" },
+            supervisor: supervisor,
+            requestPermission: { true },
+            headsetMute: HeadsetMicrophoneMute(system: FakeSystemInputMute())
+        )
+        _ = await supervisor.startJob(instructions: "check the server")
+        await controller.start()
+        first.becomeReady()
+        fake.parksCancel = true
+        first.onEvent?(.turnDone(role: "user", transcript: "Cancel background jobs."))
+        await fake.cancelParked.waitUntil(1)
+
+        controller.stop()
+        await controller.start()
+        second.becomeReady()
+        let before = second.appended.count
+        fake.releaseCancel()
+        await settle(until: { fake.cancelled.count == 1 })
+        await settle(20)
+
+        XCTAssertEqual(fake.cancelled, ["rt-1"], "the job is still cancelled on Hermes")
+        XCTAssertEqual(second.appended.count, before, "\(second.appended.map(\.text))")
         controller.stop()
     }
 }

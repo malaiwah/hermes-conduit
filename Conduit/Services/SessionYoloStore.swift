@@ -8,7 +8,7 @@ enum SessionYoloStoreDiagnostic: Equatable {
 }
 
 private let sessionYoloStoreLog = Logger(
-    subsystem: "com.milim.conduit",
+    subsystem: "com.milim.relay",
     category: "SessionYoloStore"
 )
 

@@ -272,7 +272,7 @@ final class EchoCancellingVoicePlayback: SpeechPlaybackService {
             try file.read(into: buffer)
             return buffer
         } catch {
-            conversationAudioLogger.error("Fallback speech could not be decoded: \(String(describing: error), privacy: .public)")
+            conversationAudioLogger.error("Fallback speech could not be decoded: \(LogRedaction.describing(error), privacy: .public)")
             throw VoiceAudioError.unavailable(AppLocalization.string("Could not play Hermes fallback speech."))
         }
     }

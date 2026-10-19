@@ -304,6 +304,65 @@ extension DashboardTicketBridgeTests {
     }
 }
 
+// MARK: - Answers that land after a dashboard switch
+
+@MainActor
+extension DashboardTicketBridgeTests {
+    /// The page answered, and the switch invalidated the bridge before the
+    /// caller ran: the caller hears unreadiness, never the old dashboard's
+    /// answer, which it would apply to the dashboard now showing.
+    func testAPageAnswerThatLandsAfterInvalidationIsNotReady() async throws {
+        let requests = DashboardTicketBridgePendingRequests()
+        let bridge = DashboardTicketBridge(
+            baseURL: "http://127.0.0.1:1",
+            pendingRequests: requests,
+            readinessPollAttempts: 0,
+            readinessPollInterval: .milliseconds(1)
+        )
+        bridge.webViewCanRun = { true }
+        // Let the initial load settle first, as in
+        // testExpiredRequestDeadlineMarksWebViewStalled, so its failure
+        // can't reject the request this test answers.
+        for _ in 0..<80 where !bridge.isLoadFailed {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        bridge.simulateLandingForTesting(.ready)
+
+        let result = Task { try await bridge.requestJSON(path: "/api/sessions") }
+        var answer: DashboardTicketBridgePendingRequests.Continuation?
+        for _ in 0..<1_000 where answer == nil {
+            await Task.yield()
+            answer = requests.removeValue(for: 1)
+        }
+        try XCTUnwrap(answer).resume(returning: ["sessions": []])
+        bridge.invalidate()
+
+        do {
+            _ = try await result.value
+            XCTFail("an answer for an invalidated bridge must not reach its caller")
+        } catch DashboardTicketBridgeError.notReady {
+            // expected
+        }
+    }
+
+    /// invalidate() doesn't cancel a request sent without the page, so its
+    /// answer can come back up to its deadline after a switch.
+    func testAnAnswerWithoutThePageThatLandsAfterInvalidationIsNotReady() async throws {
+        let held = HeldDashboardRequests(baseURL: "https://late-\(UUID().uuidString.lowercased()).invalid")
+        let result = Task { try await held.bridge.requestJSON(path: "/api/sessions") }
+        try await held.waitForRequests(1)
+        held.bridge.invalidate()
+        try await held.answer(["sessions": []])
+
+        do {
+            _ = try await result.value
+            XCTFail("an answer for an invalidated bridge must not reach its caller")
+        } catch DashboardTicketBridgeError.notReady {
+            // expected
+        }
+    }
+}
+
 @MainActor
 extension DashboardTicketBridgeTests {
     func testBackgroundRequestsSendTheCookieThatExpiresLast() throws {
@@ -339,6 +398,36 @@ extension DashboardTicketBridgeTests {
             DashboardBackgroundSession.redirect(from: original, to: try proposed("https://elsewhere.example/api/sessions")),
             "cookies never follow a redirect to another origin"
         )
+    }
+
+    func testABackgroundResponseOverTheLimitIsNeverHeldWhole() async throws {
+        let limit = 1_024
+        let request = URLRequest(url: try XCTUnwrap(URL(string: "https://example.com/api/sessions")))
+        let body = Data(repeating: 0x20, count: limit * 4)
+
+        // A length over the limit is refused before the body is read.
+        let announced = try await DashboardTicketBridge.load(
+            request, deadline: .seconds(10), maxResponseBytes: limit,
+            session: downloadSession(status: 200, body: body, headers: ["Content-Length": String(body.count)])
+        )
+        XCTAssertTrue(announced.oversized)
+        XCTAssertTrue(announced.data.isEmpty, "nothing of an announced oversized body is held")
+
+        // Without a length, the read stops once the limit is passed.
+        let streamed = try await DashboardTicketBridge.load(
+            request, deadline: .seconds(10), maxResponseBytes: limit,
+            session: downloadSession(status: 200, body: body)
+        )
+        XCTAssertTrue(streamed.oversized)
+        XCTAssertLessThanOrEqual(streamed.data.count, limit, "the body past the limit is never held")
+
+        let small = Data(#"{"ok":true}"#.utf8)
+        let fits = try await DashboardTicketBridge.load(
+            request, deadline: .seconds(10), maxResponseBytes: limit,
+            session: downloadSession(status: 200, body: small)
+        )
+        XCTAssertFalse(fits.oversized)
+        XCTAssertEqual(fits.data, small)
     }
 
     // MARK: - File downloads (#569)
@@ -399,6 +488,19 @@ extension DashboardTicketBridgeTests {
             XCTFail("401 needs a sign-in")
         } catch DashboardTicketBridgeError.signInRequired {}
 
+        // Hermes refuses a sensitive or unreadable file with 403 to a caller
+        // who is signed in: a failure with Hermes' reason, not a sign-in.
+        do {
+            _ = try await DashboardTicketBridge.download(
+                request, filename: "a.mp3", into: root, maxBytes: 1_000,
+                session: downloadSession(status: 403, body: Data(#"{"detail":"Access to sensitive files is not allowed"}"#.utf8))
+            )
+            XCTFail("a refused file is not a file")
+        } catch DashboardTicketBridgeError.http(let status, let detail) {
+            XCTAssertEqual(status, 403)
+            XCTAssertEqual(detail, "Access to sensitive files is not allowed")
+        }
+
         do {
             _ = try await DashboardTicketBridge.download(
                 request, filename: "a.mp3", into: root, maxBytes: 1_000,
@@ -407,6 +509,37 @@ extension DashboardTicketBridgeTests {
             XCTFail("an older Hermes without the route is a failure the data URL can fall back from")
         } catch DashboardTicketBridgeError.http(let status, _) {
             XCTAssertEqual(status, 404)
+        }
+    }
+
+    /// The background session returns only redirects to sign-in or another
+    /// origin; each is judged by the shared sign-in decision, not by a
+    /// "/login" substring (#791).
+    func testADownloadRedirectedToAnAuthProxysSignInIsSignIn() async throws {
+        let request = URLRequest(url: try XCTUnwrap(URL(string: "https://example.com/api/fs/download?path=/tmp/a.mp3")))
+        let root = try downloadRoot()
+        for location in [
+            "https://auth.example.org/oauth2/start?rd=%2Fapi%2Ffs%2Fdownload",
+            "/oauth2/sign_in?rd=%2Fapi%2Ffs%2Fdownload",
+            "/signin",
+        ] {
+            do {
+                _ = try await DashboardTicketBridge.download(
+                    request, filename: "a.mp3", into: root, maxBytes: 1_000,
+                    session: downloadSession(status: 302, body: Data(), headers: ["Location": location])
+                )
+                XCTFail("A redirect to \(location) needs a sign-in")
+            } catch DashboardTicketBridgeError.signInRequired {}
+        }
+
+        do {
+            _ = try await DashboardTicketBridge.download(
+                request, filename: "a.mp3", into: root, maxBytes: 1_000,
+                session: downloadSession(status: 302, body: Data(), headers: ["Location": "/docs/login-guide"])
+            )
+            XCTFail("An unfollowed redirect to an ordinary page is not a file")
+        } catch DashboardTicketBridgeError.http(let status, _) {
+            XCTAssertEqual(status, 302)
         }
     }
 }

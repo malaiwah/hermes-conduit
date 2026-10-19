@@ -44,6 +44,8 @@ final class KanbanStore: ObservableObject {
     /// V3D: latest coalesced live-event invalidation (published only after a
     /// REFRESHED board reload so detail surfaces act on fresh REST state).
     @Published private(set) var liveInvalidation: KanbanEventInvalidation?
+    /// The board's live event stream is connected: polls are a backstop.
+    @Published private(set) var liveStreamConnected = false
 
     private let defaults: UserDefaults
     private let makeService: @MainActor (any DashboardJSONRequester) -> KanbanService
@@ -308,11 +310,14 @@ final class KanbanStore: ObservableObject {
     func createTask(
         _ request: KanbanCreateTaskRequest,
         initialStatus: String? = nil,
+        expectedContext: KanbanBoardContextStamp? = nil,
         includeArchived: Bool = false
     ) async throws -> KanbanTask? {
         guard !isMutating else {
             throw recordMutationError(KanbanServiceError.mutationInProgress)
         }
+        // A draft composed for one board is never created on another.
+        try validateExpectedContext(expectedContext)
         // Context is frozen before the first suspension point.
         guard let context = makeOperationContext() else {
             throw recordMutationError(KanbanServiceError.invalidResponse(AppLocalization.string("Kanban is not connected.")))
@@ -970,6 +975,11 @@ final class KanbanStore: ObservableObject {
     /// surfaces act on fresh REST state, never on raw socket payloads.
     func publishLiveInvalidation(_ invalidation: KanbanEventInvalidation) {
         liveInvalidation = invalidation
+    }
+
+    func setLiveStreamConnected(_ connected: Bool) {
+        // Every publish redraws the board.
+        if liveStreamConnected != connected { liveStreamConnected = connected }
     }
 
     /// Test seam: awaits any in-flight debounced dispatcher nudge owned by the

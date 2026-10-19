@@ -215,7 +215,7 @@ final class VoiceAudioSessionCoordinator {
         } catch {
             leases.removeValue(forKey: lease.id)
             audioSessionLogger.error(
-                "audio intent acquisition failed for \(Self.describe(intent), privacy: .public): \(String(describing: error), privacy: .public)"
+                "audio intent acquisition failed for \(Self.describe(intent), privacy: .public): \(LogRedaction.describing(error), privacy: .public)"
             )
             // The failed transition may have switched the category before
             // activation failed, leaving the physical session partially
@@ -249,7 +249,7 @@ final class VoiceAudioSessionCoordinator {
             // Transition and deactivation failures must never crash the
             // caller.
             audioSessionLogger.error(
-                "audio session policy transition failed on release: \(String(describing: error), privacy: .public)"
+                "audio session policy transition failed on release: \(LogRedaction.describing(error), privacy: .public)"
             )
             // A partial transition may have half-switched the physical
             // session under the remaining owners: restore their dominant
@@ -281,7 +281,7 @@ final class VoiceAudioSessionCoordinator {
         do {
             try session.overrideOutputToSpeaker()
         } catch {
-            audioSessionLogger.error("conversation speaker override failed: \(String(describing: error), privacy: .public)")
+            audioSessionLogger.error("conversation speaker override failed: \(LogRedaction.describing(error), privacy: .public)")
         }
     }
 
@@ -299,7 +299,7 @@ final class VoiceAudioSessionCoordinator {
         do {
             try session.setCategory(configuration.category, mode: configuration.mode, options: configuration.options)
         } catch {
-            audioSessionLogger.error("incoming call category failed: \(String(describing: error), privacy: .public)")
+            audioSessionLogger.error("incoming call category failed: \(LogRedaction.describing(error), privacy: .public)")
         }
     }
 
@@ -322,7 +322,7 @@ final class VoiceAudioSessionCoordinator {
             // activation rather than leaving the call on the earpiece.
             nativeCallSpeakerChosen = true
         } catch {
-            audioSessionLogger.error("call speaker override failed: \(String(describing: error), privacy: .public)")
+            audioSessionLogger.error("call speaker override failed: \(LogRedaction.describing(error), privacy: .public)")
         }
     }
 
@@ -337,7 +337,7 @@ final class VoiceAudioSessionCoordinator {
             try applyDominantPolicy()
         } catch {
             // needsReapply stays raised: the next transition retries.
-            audioSessionLogger.error("conversation policy after the call failed: \(String(describing: error), privacy: .public)")
+            audioSessionLogger.error("conversation policy after the call failed: \(LogRedaction.describing(error), privacy: .public)")
         }
     }
 
@@ -388,7 +388,7 @@ final class VoiceAudioSessionCoordinator {
             try applyDominantPolicy()
         } catch {
             audioSessionLogger.error(
-                "audio session rollback to the remaining policy failed: \(String(describing: error), privacy: .public)"
+                "audio session rollback to the remaining policy failed: \(LogRedaction.describing(error), privacy: .public)"
             )
         }
     }

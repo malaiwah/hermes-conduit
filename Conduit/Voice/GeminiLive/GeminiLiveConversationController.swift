@@ -1495,7 +1495,7 @@ final class GeminiLiveConversationController: ObservableObject {
             return true
         } catch {
             if pausingOnFailure {
-                geminiLiveLogger.notice("Live voice microphone couldn't start; pausing: \(String(describing: error), privacy: .public)")
+                geminiLiveLogger.notice("Live voice microphone couldn't start; pausing: \(LogRedaction.describing(error), privacy: .public)")
                 pauseForAudioInterruption()
                 if endRequestedAt == nil { phase = .paused }
                 if scheduleRetryOnFailure {

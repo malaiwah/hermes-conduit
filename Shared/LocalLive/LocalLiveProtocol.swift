@@ -1,6 +1,6 @@
 //
 //  LocalLiveProtocol.swift
-//  Conduit
+//  Conduit and the Conduit Watch app
 //
 //  Wire format for Local Live: a live call through the user's own speech
 //  server (Hugging Face speech-to-speech), relayed by the notifier's
@@ -11,14 +11,16 @@
 //  adds on the same socket. When the server asks its model address for an
 //  answer, the plugin sends `conduit.turn`; Conduit runs it as a Hermes chat
 //  turn and streams the reply back as `conduit.turn.delta`, then
-//  `conduit.turn.done`.
+//  `conduit.turn.done`. A Watch call runs the same session through the
+//  host's audio bridge, where the host answers the turns itself.
 //
 
 import Foundation
 
 enum LocalLiveProtocol {
-    static let socketPath = SpeechServerSpeechStream.socketPath
-    static let statusPath = SpeechServerSpeechStream.statusPath
+    /// SpeechServerSpeechStream's too: one relay serves both.
+    static let socketPath = "/api/plugins/conduit_push/local-live/socket"
+    static let statusPath = "/api/plugins/conduit_push/local-live/status"
     /// The OpenAI Realtime PCM rate, both ways. The 16 kHz microphone
     /// stream is upsampled to it, as for Grok Live.
     static let sampleRate: Double = 24_000
@@ -141,6 +143,26 @@ enum LocalLiveProtocol {
             return .cancel(id: id)
         default:
             return nil
+        }
+    }
+
+    /// Whether `data` tells the phone to stop the reply it is playing: the
+    /// server cleared its output audio, cancelled the response, or ended
+    /// it as cancelled. An engine that decides on its own that the caller
+    /// cut in (its own turn detection, a spoken "stop") sends one of these.
+    static func stopsPlayback(_ data: Data) -> Bool {
+        guard data.range(of: Data("output_audio_buffer".utf8)) != nil
+                || data.range(of: Data("response.cancel".utf8)) != nil
+                || data.range(of: Data("\"cancelled\"".utf8)) != nil,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = object["type"] as? String else { return false }
+        switch type {
+        case "output_audio_buffer.clear", "output_audio_buffer.cleared", "response.cancel", "response.cancelled":
+            return true
+        case "response.done":
+            return (object["response"] as? [String: Any])?["status"] as? String == "cancelled"
+        default:
+            return false
         }
     }
 

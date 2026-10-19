@@ -15,7 +15,7 @@ import Foundation
 import NaturalLanguage
 import OSLog
 
-private let onDeviceSpeechLog = Logger(subsystem: "com.milim.conduit", category: "OnDeviceSpeech")
+private let onDeviceSpeechLog = Logger(subsystem: "com.milim.relay", category: "OnDeviceSpeech")
 
 /// Who speaks Classic voice replies.
 enum VoiceSpeechOutput: String, Codable, Equatable {

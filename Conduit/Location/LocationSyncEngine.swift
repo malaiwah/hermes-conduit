@@ -176,7 +176,7 @@ struct LocationSyncStateStore {
                 try (folder as NSURL).setResourceValue(true, forKey: .isExcludedFromBackupKey)
             } catch {
                 Logger(subsystem: "com.milim.relay", category: "location")
-                    .error("Location state folder backup exclusion failed: \(error.localizedDescription, privacy: .public)")
+                    .error("Location state folder backup exclusion failed: \(LogRedaction.message(error), privacy: .public)")
             }
             try JSONEncoder().encode(state).write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         } catch {
@@ -226,6 +226,9 @@ final class LocationSyncEngine: ObservableObject {
     /// Conduit quits, so a failing Keychain doesn't make every send agree a
     /// new key with the host. (The extension can't answer a locate then.)
     private var unsavedKey: LocationCrypto.SessionKey?
+    /// Bumped by each new or forgotten key: the host drops the latest fix
+    /// it had from this phone then, so a message's fix can't count on it.
+    private(set) var keyAgreements = 0
     private let now: () -> Date
     private let deviceName: () -> String
 
@@ -281,7 +284,7 @@ final class LocationSyncEngine: ObservableObject {
             acknowledge(batch, answer: answer)
             return .sent
         } catch let error as DashboardTicketBridgeError {
-            Self.log.info("Location send failed: \(Self.describe(error), privacy: .public)")
+            Self.log.info("Location send failed: \(LogRedaction.redactingURLs(Self.describe(error)), privacy: .public)")
             switch error {
             case .signInRequired:
                 state.pause = .signInRequired
@@ -313,7 +316,7 @@ final class LocationSyncEngine: ObservableObject {
             return .failed
         } catch {
             lastError = Self.describe(error)
-            Self.log.info("Location send failed: \(Self.describe(error), privacy: .public)")
+            Self.log.info("Location send failed: \(LogRedaction.redactingURLs(Self.describe(error)), privacy: .public)")
             return .failed
         }
     }
@@ -341,8 +344,7 @@ final class LocationSyncEngine: ObservableObject {
 
     /// The host's 409s that mean it has no usable key for this phone.
     nonisolated static func needsNewKey(_ detail: String) -> Bool {
-        let lowered = detail.lowercased()
-        return lowered.contains("unknown_key") || lowered.contains("bad_seal") || lowered.contains("unknown key")
+        HostKeyConflict.isKeyLoss(detail)
     }
 
     private func post(_ batch: LocationBatch, key: LocationCrypto.SessionKey, request: Request) async throws -> [String: Any] {
@@ -406,6 +408,7 @@ final class LocationSyncEngine: ObservableObject {
         }
         // The host has nothing from this key yet.
         state.placesDigest = nil
+        keyAgreements += 1
         if let generation = answer["generation"] as? String { state.generation = generation }
         return key
     }
@@ -419,6 +422,7 @@ final class LocationSyncEngine: ObservableObject {
     private func clearKey() {
         keys.clear()
         unsavedKey = nil
+        keyAgreements += 1
     }
 
     // MARK: Reading and deleting

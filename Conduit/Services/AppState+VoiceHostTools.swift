@@ -76,7 +76,7 @@ extension AppState {
             }
             return (host, local)
         } catch {
-            Self.voiceToolsLog.info("Voice tools unavailable: \(HealthSyncEngine.describe(error), privacy: .public)")
+            Self.voiceToolsLog.info("Voice tools unavailable: \(LogRedaction.redactingURLs(HealthSyncEngine.describe(error)), privacy: .public)")
             return (nil, local)
         }
     }
@@ -166,7 +166,7 @@ extension AppState {
         } catch is PhoneSyncEngine.VoiceNotReady {
             return ["error": "The calendar isn't ready for voice yet; it will be after the next sync."]
         } catch {
-            Self.voiceToolsLog.info("Voice read failed: \(PhoneSyncEngine.describe(error), privacy: .public)")
+            Self.voiceToolsLog.info("Voice read failed: \(LogRedaction.redactingURLs(PhoneSyncEngine.describe(error)), privacy: .public)")
             // The detail stays in the log: it can name the host, and the
             // model's company would get it.
             return ["error": "The calendar couldn't be read just now."]
@@ -243,7 +243,7 @@ extension AppState {
             HealthVoiceReadLog.record(mode: mode, action: arguments["action"] as? String ?? "")
             return VoiceHostTool.modelResult(result)
         } catch {
-            Self.voiceToolsLog.info("Voice read failed: \(HealthSyncEngine.describe(error), privacy: .public)")
+            Self.voiceToolsLog.info("Voice read failed: \(LogRedaction.redactingURLs(HealthSyncEngine.describe(error)), privacy: .public)")
             // The detail stays in the log: it can name the host, and the
             // model's company would get it.
             return ["error": "The health data couldn't be read just now."]
@@ -268,7 +268,7 @@ extension AppState {
             let result = try LocationCrypto.openVoiceAnswer(response, tool: tool.name, key: key, callID: callID)
             return VoiceHostTool.modelResult(result)
         } catch {
-            Self.voiceToolsLog.info("Voice location read failed: \(LocationSyncEngine.describe(error), privacy: .public)")
+            Self.voiceToolsLog.info("Voice location read failed: \(LogRedaction.redactingURLs(LocationSyncEngine.describe(error)), privacy: .public)")
             if let bridgeError = error as? DashboardTicketBridgeError, case .http(let status, let detail) = bridgeError,
                status == 409, LocationSyncEngine.needsNewKey(detail) {
                 // The host forgot this phone's key (a wipe): the next send

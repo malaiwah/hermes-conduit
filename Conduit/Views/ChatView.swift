@@ -541,6 +541,7 @@ struct ChatView: View {
             // once.
             .task(id: "\(appState.activeSessionId ?? "")|\(appState.isBusy)|\(scenePhase == .active)|\(appState.showSidebar)") {
                 guard scenePhase == .active, !appState.showSidebar else { return }
+                appState.openChatSyncBecameVisible()
                 while !Task.isCancelled {
                     await appState.openChatSyncTick()
                     try? await Task.sleep(for: .seconds(5))
@@ -1457,6 +1458,8 @@ private struct UserImageAttachmentPreview: View {
                 // The server file, else the copy Hermes stored inside the
                 // message: Hermes clears the files that came in through chat
                 // platforms after a day.
+                // Read first: a sign-out during the fetch keeps it off the phone.
+                let generation = TranscriptImageCache.generation
                 var dataURL: String?
                 if isGatewayImage {
                     dataURL = await gatewayResolver.dataURL(for: attachment.uri)
@@ -1465,7 +1468,7 @@ private struct UserImageAttachmentPreview: View {
                     dataURL = await gatewayResolver.inlineImageDataURL(ref)
                 }
                 guard !Task.isCancelled else { return }
-                guard let dataURL, let image = await Self.keep(dataURL, as: cacheKey) else {
+                guard let dataURL, let image = await Self.keep(dataURL, as: cacheKey, generation: generation) else {
                     gatewayLoadFailed = true
                     return
                 }
@@ -1502,9 +1505,9 @@ private struct UserImageAttachmentPreview: View {
 
     /// Keeps the picture in `dataURL` on the phone and decodes it at
     /// preview size, both off the MainActor. A failed write still shows it.
-    private static func keep(_ dataURL: String, as key: String) async -> UIImage? {
+    private static func keep(_ dataURL: String, as key: String, generation: Int) async -> UIImage? {
         await Task.detached(priority: .userInitiated) { () -> UIImage? in
-            if let file = TranscriptImageCache.store(dataURL: dataURL, for: key) {
+            if let file = TranscriptImageCache.store(dataURL: dataURL, for: key, generation: generation) {
                 return Self.downsampledPreview(url: file)
             }
             return DataURLLimits.decodeBase64DataURL(dataURL, prefix: "data:image/").flatMap { UIImage(data: $0) }
@@ -3694,6 +3697,10 @@ private struct ConduitBreathing<Content: View>: View {
             sceneIsActive: scenePhase == .active,
             reduceMotion: reduceMotion,
             lowPowerMode: devicePower.isLowPowerModeEnabled,
+            // It breathes only while the chat shows work in progress (a
+            // turn, or compacting), never on an idle screen left alone, so
+            // the backdrop's idle pause doesn't apply.
+            idle: false,
             thermalState: devicePower.thermalState
         ) {
             ConduitBreathingTimeline(content: content)

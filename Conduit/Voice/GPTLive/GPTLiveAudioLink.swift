@@ -136,7 +136,7 @@ final class GPTLiveAudioLink {
         do {
             try audio.reassert()
         } catch {
-            gptLiveAudioLogger.error("GPT-Live audio couldn't reapply after a route change: \(String(describing: error), privacy: .public)")
+            gptLiveAudioLogger.error("GPT-Live audio couldn't reapply after a route change: \(LogRedaction.describing(error), privacy: .public)")
             pause()
             scheduleResume(after: Self.resumeRetryDelays)
         }
@@ -155,7 +155,7 @@ final class GPTLiveAudioLink {
         do {
             try audio.reassert()
         } catch {
-            gptLiveAudioLogger.notice("GPT-Live audio not back yet: \(String(describing: error), privacy: .public)")
+            gptLiveAudioLogger.notice("GPT-Live audio not back yet: \(LogRedaction.describing(error), privacy: .public)")
             return false
         }
         resumeTask?.cancel()

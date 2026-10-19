@@ -156,7 +156,7 @@ final class WebRTCGPTLivePeer: NSObject, GPTLivePeer {
                 }
             }
         } catch {
-            gptLivePeerLogger.error("GPT-Live answer rejected: \(String(describing: error), privacy: .public)")
+            gptLivePeerLogger.error("GPT-Live answer rejected: \(LogRedaction.describing(error), privacy: .public)")
             throw GPTLivePeerError.answerRejected
         }
         // The model's track exists once the answer is in: a speaker muted

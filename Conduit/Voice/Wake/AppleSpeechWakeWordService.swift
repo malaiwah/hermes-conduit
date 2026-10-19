@@ -119,7 +119,7 @@ final class AppleSpeechWakeWordService: WakeWordService {
             try startAudio()
         } catch {
             stopEverything()
-            wakeLogger.error("wake audio start failed: \(error.localizedDescription, privacy: .public)")
+            wakeLogger.error("wake audio start failed: \(LogRedaction.message(error), privacy: .public)")
             throw WakeWordServiceError.unavailable(AppLocalization.string("Wake listening couldn't use the microphone. Close other apps using it, then try again."))
         }
         observeAudioDisruptions()
@@ -229,7 +229,7 @@ final class AppleSpeechWakeWordService: WakeWordService {
         do {
             try AVAudioSession.sharedInstance().setPreferredInput(nil)
         } catch {
-            wakeLogger.error("wake listening could not clear its preferred input: \(error.localizedDescription, privacy: .public)")
+            wakeLogger.error("wake listening could not clear its preferred input: \(LogRedaction.message(error), privacy: .public)")
         }
     }
 
@@ -318,7 +318,7 @@ final class AppleSpeechWakeWordService: WakeWordService {
                 try self.startAudio()
                 self.startRecognitionCycle()
             } catch {
-                wakeLogger.error("wake audio restart failed: \(error.localizedDescription, privacy: .public)")
+                wakeLogger.error("wake audio restart failed: \(LogRedaction.message(error), privacy: .public)")
                 self.recordFailure(AppLocalization.string("Wake listening couldn't use the microphone. Close other apps using it, then try again."))
             }
         }

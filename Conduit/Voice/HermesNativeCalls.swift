@@ -390,7 +390,7 @@ final class HermesNativeCalls: NSObject {
         if let error {
             calls[id] = nil
             let code = (error as? CXErrorCodeIncomingCallError)?.code
-            nativeCallsLogger.notice("Hermes call not shown: \(error.localizedDescription, privacy: .public)")
+            nativeCallsLogger.notice("Hermes call not shown: \(LogRedaction.message(error), privacy: .public)")
             if traced {
                 HermesCallTrace.shared.note("CallKit didn't show it (code \(code.map { String($0.rawValue) } ?? "unknown"))")
             }

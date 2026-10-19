@@ -102,7 +102,7 @@ struct ReplySourcesSettingsSection: View {
         } catch is CancellationError {
             return
         } catch let readError {
-            replySourcesLogger.notice("Reply sources not read: \(readError.localizedDescription, privacy: .public)")
+            replySourcesLogger.notice("Reply sources not read: \(LogRedaction.message(readError), privacy: .public)")
             if key == self.key { error = AppLocalization.string("Could not read this setting from the host: \(UserFacingError.message(for: readError))") }
         }
     }
@@ -123,7 +123,7 @@ struct ReplySourcesSettingsSection: View {
             let cancelled = saveError is CancellationError
             if !cancelled {
                 Haptics.error()
-                replySourcesLogger.notice("Reply sources not saved: \(saveError.localizedDescription, privacy: .public)")
+                replySourcesLogger.notice("Reply sources not saved: \(LogRedaction.message(saveError), privacy: .public)")
             }
             // Read back what the host kept rather than guess at it.
             saving = nil

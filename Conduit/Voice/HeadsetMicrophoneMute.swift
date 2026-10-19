@@ -127,7 +127,7 @@ final class HeadsetMicrophoneMute {
         } catch {
             // Unknown now: the next sync or gesture is applied, not skipped.
             reflectedMuted = nil
-            headsetMuteLogger.error("Setting the system input mute failed: \(error.localizedDescription, privacy: .public)")
+            headsetMuteLogger.error("Setting the system input mute failed: \(LogRedaction.message(error), privacy: .public)")
         }
     }
 

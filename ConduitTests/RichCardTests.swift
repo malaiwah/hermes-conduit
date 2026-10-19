@@ -8,6 +8,8 @@
 //  extension of an existing class, so the test planner needs no new entry.
 //
 
+import MapKit
+import UserNotifications
 import XCTest
 @testable import Conduit
 
@@ -86,6 +88,15 @@ extension AppStateVoiceCapabilityTests {
         XCTAssertEqual(driving.route?.mode, .driving)
     }
 
+    func testACyclingRouteIsDrawnAndOpenedAsCycling() {
+        // Not walking's time and line under the bicycle, and Maps opens on its bike directions.
+        XCTAssertEqual(RichPlaceLookup.transportType(.cycling), .cycling)
+        XCTAssertEqual(RichPlaceLookup.directionsMode(.cycling), MKLaunchOptionsDirectionsModeCycling)
+        XCTAssertEqual(MapsNavigator.directionsMode(.cycling), MKLaunchOptionsDirectionsModeCycling)
+        XCTAssertEqual(RichPlaceLookup.transportType(.walking), .walking)
+        XCTAssertEqual(MapsNavigator.directionsMode(.walking), MKLaunchOptionsDirectionsModeWalking)
+    }
+
     func testRichInformationCardsReadTheirOwnParts() throws {
         let stat: [String: Any] = ["label": "Steps", "value": "8,412", "change": "+12%", "trend": "up", "tone": "good", "spark": [1, 2, 3]]
         let series: [[String: Any]] = [["name": "Sales", "values": [5, 9.5]], ["values": [1]]]
@@ -155,6 +166,15 @@ extension AppStateVoiceCapabilityTests {
         XCTAssertEqual(RichPerson(json: ["name": "Ada Lovelace"])?.match(in: [byName])?.id, "2")
     }
 
+    func testADoneStatusShowsAndReadsAsComplete() throws {
+        // The bar and VoiceOver read the same value: a done card is full whatever progress it was last given.
+        let done = try XCTUnwrap(RichStatus(json: ["state": "Delivered", "phase": "done", "progress": 0.4]))
+        XCTAssertEqual(done.shownProgress, 1)
+        let active = try XCTUnwrap(RichStatus(json: ["state": "On its way", "phase": "active", "progress": 0.4]))
+        XCTAssertEqual(active.shownProgress, 0.4)
+        XCTAssertNil(RichStatus(json: ["state": "Delivered", "phase": "done"])?.shownProgress, "no bar without a progress")
+    }
+
     func testAChatShowsALiveCardOnlyWhereItWasLastUpdated() {
         func show(_ id: String, _ state: String) -> ChatMessage {
             let answer = #"{"ok": true, "cards": [{"type": "status", "live": "order", "status": {"state": "\#(state)"}}]}"#
@@ -185,6 +205,86 @@ extension AppStateVoiceCapabilityTests {
         XCTAssertTrue(RichStepsMemory(defaults: defaults).isDone(key, 2), "ticks are kept")
         memory.toggle(key, 2)
         XCTAssertFalse(memory.isDone(key, 2))
+    }
+
+    func testAStoppedStepTimerDoesNotScheduleItsNotification() async {
+        let defaults = UserDefaults(suiteName: "RichStepsTimerTests")!
+        defaults.removePersistentDomain(forName: "RichStepsTimerTests")
+        // Each start waits at the settings call, and (when held) inside the add,
+        // until the test lets it on. `pending` is what the notification center keeps.
+        var asks: [CheckedContinuation<Bool, Never>] = []
+        var adds: [CheckedContinuation<Void, Never>] = []
+        var holdAdds = false
+        var added: [String] = []
+        var pending: [String: TimeInterval] = [:]
+        let notifier = RichStepsMemory.Notifier(
+            allowed: { await withCheckedContinuation { asks.append($0) } },
+            add: { request in
+                added.append(request.identifier)
+                if holdAdds { await withCheckedContinuation { adds.append($0) } }
+                pending[request.identifier] = (request.trigger as? UNTimeIntervalNotificationTrigger)?.timeInterval
+            },
+            remove: { $0.forEach { pending.removeValue(forKey: $0) } })
+        let memory = RichStepsMemory(defaults: defaults, notifier: notifier)
+        func until(_ ready: () -> Bool, _ what: String) async {
+            var turns = 0
+            while !ready(), turns < 10_000 { await Task.yield(); turns += 1 }
+            XCTAssertTrue(ready(), what)
+        }
+        func id(_ number: Int) -> String { "\(RichStepsMemory.notificationPrefix)k-\(number)" }
+
+        // Stopped while asking for permission.
+        let first = memory.startTimer("k", 1, seconds: 60, text: "Simmer.", title: nil)
+        await until({ asks.count == 1 }, "asking")
+        memory.stopTimer("k", 1)
+        asks.removeFirst().resume(returning: true)
+        await first.value
+        XCTAssertEqual(added, [], "stopped before the notification was added")
+
+        // Start, stop and start again while asking: only the timer that runs gets one.
+        let stale = memory.startTimer("k", 2, seconds: 60, text: "Rest.", title: nil)
+        await until({ asks.count == 1 }, "asking")
+        memory.stopTimer("k", 2)
+        let running = memory.startTimer("k", 2, seconds: 60, text: "Rest.", title: nil)
+        await until({ asks.count == 2 }, "asking again")
+        asks.removeFirst().resume(returning: true)
+        await stale.value
+        XCTAssertEqual(added, [], "the stopped start adds nothing")
+        asks.removeFirst().resume(returning: true)
+        await running.value
+        XCTAssertEqual(added.count, 1, "the running timer is scheduled")
+        XCTAssertNotNil(pending[id(2)])
+        XCTAssertNotNil(memory.timerEnd("k", 2))
+        memory.stopTimer("k", 2)
+        XCTAssertNil(pending[id(2)])
+
+        // Stopped while the add is in flight: the request is taken back.
+        holdAdds = true
+        let stopped = memory.startTimer("k", 3, seconds: 60, text: "Chill.", title: nil)
+        await until({ asks.count == 1 }, "asking")
+        asks.removeFirst().resume(returning: true)
+        await until({ adds.count == 1 }, "adding")
+        memory.stopTimer("k", 3)
+        adds.removeFirst().resume()
+        await stopped.value
+        XCTAssertNil(pending[id(3)], "a stopped timer's request doesn't stay")
+
+        // Stopped and started again while the first add is in flight: the old
+        // request lands first and is taken back; the new timer's request stays.
+        let old = memory.startTimer("k", 4, seconds: 60, text: "Bake.", title: nil)
+        await until({ asks.count == 1 }, "asking")
+        asks.removeFirst().resume(returning: true)
+        await until({ adds.count == 1 }, "adding")
+        memory.stopTimer("k", 4)
+        holdAdds = false
+        let restarted = memory.startTimer("k", 4, seconds: 90, text: "Bake.", title: nil)
+        await until({ asks.count == 1 }, "asking again")
+        asks.removeFirst().resume(returning: true)
+        adds.removeFirst().resume()
+        await old.value
+        await restarted.value
+        XCTAssertEqual(pending[id(4)], 90, "the restarted timer's notification is the one scheduled")
+        memory.stopTimer("k", 4)
     }
 
     func testRichCardsComeFromConduitShowsSavedAnswer() throws {
@@ -239,5 +339,29 @@ extension AppStateVoiceCapabilityTests {
         let calls = try VoiceHistoryClient.chatCalls(from: response)
         XCTAssertEqual(calls.first?.turns.map(\.cards.count), [0, 1])
         XCTAssertEqual(calls.first?.turns.last?.cards.first?.places.first?.name, "Tartine")
+    }
+
+    /// A live card shown again later in a saved call replaces the earlier
+    /// one there, as it does in a typed chat; the cards shown beside it stay.
+    func testSavedChatCallShowsOnlyTheLatestOfALiveCard() throws {
+        func shown(_ state: String, sibling: Bool = false) -> [String: Any] {
+            var cards: [[String: Any]] = [["type": "status", "live": "order", "status": ["state": state]]]
+            if sibling { cards.append(["type": "place", "places": [["name": "Tartine"]]]) }
+            return ["role": "assistant", "text": "Order: \(state)", "cards": cards]
+        }
+        let response: [String: Any] = [
+            "ok": true, "chat_id": "c",
+            "calls": [["call_id": "call-1", "engine": "gpt-live", "turns": [
+                ["role": "user", "text": "Where's my order?"] as [String: Any],
+                shown("Packed", sibling: true), shown("Shipped"), shown("Delivered"),
+            ]] as [String: Any]],
+        ]
+        let call = try XCTUnwrap(try VoiceHistoryClient.chatCalls(from: response).first)
+
+        let drawn = call.turns.map { call.currentCards(for: $0) }
+        XCTAssertEqual(drawn.map(\.count), [0, 1, 0, 1])
+        XCTAssertEqual(drawn[1].first?.places.first?.name, "Tartine", "the sibling stays")
+        XCTAssertEqual(drawn[3].first?.live, "order")
+        XCTAssertEqual(call.turns.map(\.cards.count), [0, 2, 1, 1], "the saved record is unchanged")
     }
 }

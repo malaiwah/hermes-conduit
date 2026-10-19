@@ -6,7 +6,7 @@
 import Foundation
 import os
 
-private let speechServerSpeechLog = Logger(subsystem: "com.milim.conduit", category: "SpeechServerSpeech")
+private let speechServerSpeechLog = Logger(subsystem: "com.milim.relay", category: "SpeechServerSpeech")
 
 /// Classic voice's replies spoken by the user's own speech server (Hugging
 /// Face speech-to-speech, the one Hermes Live Voice runs), so one server

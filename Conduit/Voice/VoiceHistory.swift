@@ -65,6 +65,7 @@ extension VoiceCallEngine {
         switch engine {
         case WatchAudioBridgeWire.gptLive: return .gptLive
         case WatchAudioBridgeWire.grok: return .grokLive
+        case WatchAudioBridgeWire.localLive: return .localLive
         default: return nil
         }
     }
@@ -127,6 +128,24 @@ struct VoiceChatCall: Identifiable, Equatable {
     var engine: VoiceCallEngine? = nil
 
     var id: String { callID }
+
+    /// Each live card's last turn in the call: a live card shown again
+    /// replaces the earlier one wherever it's shown, as in a typed chat.
+    var latestLiveTurns: [String: String] {
+        var latest: [String: String] = [:]
+        for turn in turns {
+            for name in turn.cards.compactMap(\.live) { latest[name] = turn.id.uuidString }
+        }
+        return latest
+    }
+
+    /// `turn`'s cards less the live ones a later turn brought up to date.
+    func currentCards(
+        for turn: VoiceConversationTranscriptEntry,
+        latestLiveTurns: [String: String]? = nil
+    ) -> [RichCard] {
+        RichCard.current(turn.cards, row: turn.id.uuidString, latestLiveRows: latestLiveTurns ?? self.latestLiveTurns)
+    }
 }
 
 enum VoiceHistoryError: Error, Equatable {
@@ -465,7 +484,7 @@ final class VoiceTranscriptRecorder {
             voiceHistoryLogger.notice("This Hermes host can't store voice transcripts; not saving the call")
             isDisabled = true
         } catch {
-            voiceHistoryLogger.error("Saving a voice transcript failed: \(String(describing: error), privacy: .public)")
+            voiceHistoryLogger.error("Saving a voice transcript failed: \(LogRedaction.describing(error), privacy: .public)")
         }
     }
 

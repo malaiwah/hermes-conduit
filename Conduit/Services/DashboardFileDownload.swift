@@ -37,18 +37,19 @@ extension DashboardTicketBridge {
         path: String,
         filename: String,
         into root: URL,
-        maxBytes: Int = DashboardFileDownloadLimits.maxBytes
+        maxBytes: Int = DashboardFileDownloadLimits.maxBytes,
+        session: URLSession = DashboardBackgroundSession.shared
     ) async throws -> DashboardDownloadedFile {
         let request = try await fileDownloadRequest(path: path)
         do {
-            return try await Self.download(request, filename: filename, into: root, maxBytes: maxBytes)
+            return try await Self.download(request, filename: filename, into: root, maxBytes: maxBytes, session: session)
         } catch DashboardTicketBridgeError.signInRequired {
             // A token the server revoked before its stored expiry: refresh
             // past it and try once more, as `requestJSON` does.
             guard let nativeOAuthSession, !isInvalidated else { throw DashboardTicketBridgeError.signInRequired }
             let retry = try await nativeOAuthSession.authorizedRequest(path: path, replacing: request)
             do {
-                return try await Self.download(retry, filename: filename, into: root, maxBytes: maxBytes)
+                return try await Self.download(retry, filename: filename, into: root, maxBytes: maxBytes, session: session)
             } catch DashboardTicketBridgeError.signInRequired {
                 nativeOAuthSession.discardRejectedGrant()
                 throw DashboardTicketBridgeError.signInRequired
@@ -105,17 +106,32 @@ extension DashboardTicketBridge {
         guard let http = response as? HTTPURLResponse else {
             throw DashboardTicketBridgeError.http(status: 0, detail: "No response from the dashboard.")
         }
+        // The background session follows only same-origin redirects to
+        // ordinary pages. One that comes back is judged as everywhere else:
+        // to another origin or a sign-in page, sign-in is required.
         if (300...399).contains(http.statusCode),
-           (http.value(forHTTPHeaderField: "Location") ?? "").contains("/login") {
+           let requestURL = request.url,
+           DashboardSignInRedirect.redirectIsSignIn(
+            location: http.value(forHTTPHeaderField: "Location"),
+            from: http.url ?? requestURL,
+            // Only the origin is compared: the file's URL stands for the
+            // dashboard it was requested from.
+            forDashboard: requestURL
+           ) {
             throw DashboardTicketBridgeError.signInRequired
         }
-        if http.statusCode == 401 || http.statusCode == 403 {
+        // Only 401 is a sign-in, as for every other native request. Hermes
+        // answers 403 to a caller who is signed in when it won't serve the
+        // file (a sensitive or unreadable path): refreshing can't change
+        // that, and the grant stays.
+        if http.statusCode == 401 {
             throw DashboardTicketBridgeError.signInRequired
         }
         guard (200...299).contains(http.statusCode) else {
             throw DashboardTicketBridgeError.http(
                 status: http.statusCode,
-                detail: AppLocalization.string("Dashboard request failed (\(String(http.statusCode))).")
+                detail: await errorDetail(bytes)
+                    ?? AppLocalization.string("Dashboard request failed (\(String(http.statusCode))).")
             )
         }
         if http.expectedContentLength > Int64(maxBytes) {
@@ -161,6 +177,22 @@ extension DashboardTicketBridge {
             try? FileManager.default.removeItem(at: directory)
             throw mappedTransportError(error)
         }
+    }
+
+    /// Hermes' reason (`detail`) from the start of an error body, if it
+    /// fits in a few KB of JSON.
+    private nonisolated static func errorDetail(_ bytes: URLSession.AsyncBytes) async -> String? {
+        var data = Data()
+        do {
+            for try await byte in bytes {
+                guard data.count < 4 * 1024 else { return nil }
+                data.append(byte)
+            }
+        } catch {
+            return nil
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return json["detail"] as? String
     }
 
     /// A cancelled caller hears cancellation; a network failure is status 0,

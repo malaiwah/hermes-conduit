@@ -127,7 +127,7 @@ final class LocationBackgroundMonitor: NSObject, CLLocationManagerDelegate {
                     self?.handle(event)
                 }
             } catch {
-                LocationSyncEngine.log.info("Saved-place monitor stopped: \(error.localizedDescription, privacy: .public)")
+                LocationSyncEngine.log.info("Saved-place monitor stopped: \(LogRedaction.message(error), privacy: .public)")
             }
         }
         return created
@@ -150,7 +150,7 @@ final class LocationBackgroundMonitor: NSObject, CLLocationManagerDelegate {
             manager.startMonitoringLocationPushes { [weak self] token, error in
                 let hex = token.map { $0.map { String(format: "%02x", $0) }.joined() }
                 if let error {
-                    LocationSyncEngine.log.info("Location pushes unavailable: \(error.localizedDescription, privacy: .public)")
+                    LocationSyncEngine.log.info("Location pushes unavailable: \(LogRedaction.message(error), privacy: .public)")
                 }
                 Task { @MainActor in
                     guard let self, self.pushesOn else { return }
