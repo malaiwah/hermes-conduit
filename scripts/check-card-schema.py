@@ -22,7 +22,7 @@ import time
 import urllib.error
 import urllib.request
 
-PLUGIN_RAW = "https://raw.githubusercontent.com/kaishi00/hermes-conduit-notifier/main/"
+PLUGIN_RAW = "https://raw.githubusercontent.com/kaishi00/hermes-conduit-notifier/bb495462635179ae7633ef3823ca91d4482b098e/"
 # Conduit's copy -> the plugin's file.
 COPIES = {
     os.path.join("Conduit", "Cards", "card-schema.json"): "cards/card-schema.json",
