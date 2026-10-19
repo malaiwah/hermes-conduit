@@ -35,6 +35,8 @@ struct LoginAddressStep: View {
     /// Set only by the user's Cloudflare switch, so a filled-in token never
     /// scrolls the form away from its top.
     @State private var revealCloudflare = false
+    @AppStorage(NativeOAuthBrowserPreference.privateSignInKey)
+    private var privateSignIn = false
 
     var body: some View {
         // A keyboard-aware scroll view: at compact heights with the keyboard
@@ -192,7 +194,7 @@ struct LoginAddressStep: View {
                 LoginRowLabel(
                     icon: "slider.horizontal.3",
                     title: AppLocalization.string("Advanced"),
-                    detail: AppLocalization.string("Cloudflare Access token, extra headers"),
+                    detail: AppLocalization.string("Private sign-in, Cloudflare Access token, extra headers"),
                     accessory: flow.showsAdvanced ? .expanded : .collapsed
                 )
             }
@@ -249,6 +251,16 @@ struct LoginAddressStep: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Toggle("Private sign-in page", isOn: $privateSignIn)
+                .tint(.conduitAccent)
+                .font(.callout.weight(.semibold))
+                .accessibilityIdentifier("\(prefix).private-sign-in")
+            Text(privateSignIn
+                 ? AppLocalization.string("Each sign-in starts fresh and shows every way the sign-in page offers, such as a login code.")
+                 : AppLocalization.string("Sign-in remembers your account and uses its passkey. Turn this on if you need another way, such as a login code."))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Button {
                 focusedField = nil
                 flow.showsExtraHeaders = true

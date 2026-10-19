@@ -823,6 +823,18 @@ final class NativeOAuthLoginModel: ObservableObject {
     }
 }
 
+/// Whether the native sign-in browser starts private (ephemeral) each time.
+/// A remembered identity-provider session can show only a re-authentication
+/// page (Pocket ID offers just the passkey there); a private page shows the
+/// full sign-in page, with a login code for example.
+enum NativeOAuthBrowserPreference {
+    static let privateSignInKey = "conduit.nativeOAuth.privateSignIn"
+
+    static var privateSignIn: Bool {
+        UserDefaults.standard.bool(forKey: privateSignInKey)
+    }
+}
+
 struct NativeOAuthSignInSheet: View {
     let baseURL: String
     let cloudflareAccess: CloudflareAccessCredentials?
@@ -838,6 +850,7 @@ struct NativeOAuthSignInSheet: View {
         // browser covers this sheet. Visibility changes are not OAuth cancellation.
         WebAuthenticationView(
             url: model.authorizeURL,
+            privateSignIn: NativeOAuthBrowserPreference.privateSignIn,
             operation: {
                 try await model.run(
                     baseURL: baseURL,
@@ -901,6 +914,7 @@ final class NativeOAuthPresentationTask {
 
 private struct WebAuthenticationView: UIViewControllerRepresentable {
     let url: URL?
+    let privateSignIn: Bool
     let operation: @MainActor () async throws -> NativeOAuthLoginResult
     let onSuccess: @MainActor (NativeOAuthLoginResult) -> Void
     let onError: @MainActor (Error) -> Void
@@ -911,7 +925,7 @@ private struct WebAuthenticationView: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> WebAuthenticationPresenterViewController {
-        let controller = WebAuthenticationPresenterViewController(onCancel: {
+        let controller = WebAuthenticationPresenterViewController(privateSignIn: privateSignIn, onCancel: {
             nativeOAuthLogger.notice("OAuth stage: user cancelled browser")
             context.coordinator.cancel()
             onCancel()
@@ -933,11 +947,12 @@ private struct WebAuthenticationView: UIViewControllerRepresentable {
         controller.closeBrowser()
     }
 
-    /// Shows the authorize URL in an ASWebAuthenticationSession that shares
-    /// Safari's cookies (not ephemeral), so an identity provider the user is
-    /// already signed in to in Safari, such as Pocket ID, needs no second
-    /// sign-in, and its passkeys work. Hermes only accepts a loopback
-    /// redirect, so the code still arrives through NativeOAuthLoopbackServer;
+    /// Shows the authorize URL in an ASWebAuthenticationSession. By default it
+    /// is not ephemeral, so it keeps the identity provider's session (shared
+    /// with Safari where iOS allows) and its passkeys work, unlike the
+    /// sign-in WebView; NativeOAuthBrowserPreference.privateSignIn makes it
+    /// ephemeral for a fresh page with every sign-in method. Hermes only
+    /// accepts a loopback redirect, so the code still arrives through NativeOAuthLoopbackServer;
     /// the session's callback scheme never matches, and Conduit closes the
     /// browser itself once the callback arrives or the sign-in sheet goes away.
     final class WebAuthenticationPresenterViewController: UIViewController,
@@ -947,11 +962,13 @@ private struct WebAuthenticationView: UIViewControllerRepresentable {
         static let unusedCallbackScheme = "conduit-native-oauth-loopback"
 
         private var url: URL?
+        private let privateSignIn: Bool
         private let onCancel: () -> Void
         private var session: ASWebAuthenticationSession?
         private var closedByConduit = false
 
-        init(onCancel: @escaping () -> Void) {
+        init(privateSignIn: Bool, onCancel: @escaping () -> Void) {
+            self.privateSignIn = privateSignIn
             self.onCancel = onCancel
             super.init(nibName: nil, bundle: nil)
         }
@@ -1019,7 +1036,7 @@ private struct WebAuthenticationView: UIViewControllerRepresentable {
                 }
             }
             session.presentationContextProvider = self
-            session.prefersEphemeralWebBrowserSession = false
+            session.prefersEphemeralWebBrowserSession = privateSignIn
             self.session = session
             if session.start() {
                 nativeOAuthLogger.notice("OAuth stage: browser session presented")
