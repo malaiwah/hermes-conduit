@@ -1,0 +1,15 @@
+Before: VoiceOver read three buttons by their symbol only: the two orange arrow buttons that send a typed answer to a clarify question (inline and batch layouts in ChatView) and the clear button in the Kanban search capsule. Nothing caught a new icon-only button without a label.
+
+After: those buttons say "Send answer" and "Clear search", and a new test, `AccessibilityLabelAuditTests`, fails on any icon-only `Button` or `Menu` in `Conduit/Views` that has no spoken name.
+
+How: the test is a text-level check like `PrivacyManifestTests`, reading the sources from `#filePath`. A control counts as icon-only when an `Image(systemName:` sits within four lines of a `Button(`, `Button {` or `} label: {` line. Scanning forward through that control, `.accessibilityLabel(` or `.accessibilityHidden(true)` names it, and `Text(`/`Label(` name it only inside the label closure. An allowlist inside the test, keyed by file and trimmed line text so line shifts don't break it, has one entry: `ProfilePickerSheet`'s reorder arrow, whose call sites add "Move <profile> earlier/later". An allowlist entry that no longer matches also fails. Four small self-tests pin the heuristic on inline snippets. The labels use `AppLocalization.string`; "Clear search" was already in the catalog, and "Send answer" is new and translated in all 13 shipped languages (`check-l10n-coverage.py` passes).
+
+Credit: the audit and the three gaps come from Marceswan's macOS work, https://github.com/Marceswan/hermes-conduit/commit/f74a8c75 and https://github.com/Marceswan/hermes-conduit/commit/e3400d3e. Changes from his version: the allowlist lives in the test instead of a docs file, the labels go through the string catalog with translations instead of bare English literals, `.help(` no longer counts as a name (on iOS it is a hint, not a label), and the scan fix below. His Esc-closes-sheets change is Mac-only and was not taken.
+
+Review notes: his scan stopped at any line containing `Button` or `Menu` at the owner's depth, including `.buttonStyle(PressableButtonStyle())`, so a label placed after a custom button style was never seen; on upstream that gave false positives for New Bot and New Chat. The scan now stops only at a line that starts with `Button`/`Menu` (a new control), and a self-test covers it. It is a heuristic: icons built inside helpers show up as false positives (hence the allowlist), and UIKit controls are out of reach. Upstream's other source guards are Python scripts in `scripts/`; if you prefer that form, the same heuristic ports to a `scripts/check-a11y-labels.py` that runs without a simulator.
+
+Tests: on a Mac (Xcode 27.1, iOS 27.0 simulator, on f9073cb before a rebase onto current main), with the test alone `testIconOnlyButtonsHaveAccessibilityLabels` fails and lists the three buttons (ChatView arrow.up twice, KanbanViews xmark.circle.fill); with the labels, all 5 tests in `AccessibilityLabelAuditTests` pass.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+https://claude.ai/code/session_015dr3YePkkNoaYg8KJ1dZQD
