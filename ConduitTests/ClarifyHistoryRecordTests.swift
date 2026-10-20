@@ -157,4 +157,76 @@ extension ClarifyBatchStateTests {
                               output: #"{"question": "Ship it?", "user_response": "Yes"}"#, status: .complete),
             rowID: "row-2"))
     }
+
+    // MARK: - A clarify call Conduit can't answer (#14)
+
+    func testAWaitingClarifyCallShowsItsQuestionNotItsArguments() throws {
+        let tool = clarifyHistoryRow(
+            input: #"{"questions": [{"question": "Ship it?", "choices": ["Yes", "No"]}, {"question": "Which branch?"}]}"#,
+            output: nil,
+            status: .running
+        )
+        XCTAssertNil(ClarifyActivity.historyRecord(for: tool, rowID: "row-1"))
+        let preview = try XCTUnwrap(ClarifyToolCallPreview.make(for: tool))
+        XCTAssertEqual(preview.state, .waiting)
+        XCTAssertEqual(preview.questions, [
+            .init(text: "Ship it?", choices: ["Yes", "No"]),
+            .init(text: "Which branch?", choices: [])
+        ])
+        XCTAssertNil(preview.error)
+    }
+
+    func testALiveClarifyLabelReadsAsItsQuestion() throws {
+        // Hermes' live tool.start carries only its label.
+        let labelled = try XCTUnwrap(ClarifyToolCallPreview.make(
+            for: clarifyHistoryRow(input: "Asking Which environment?", output: nil, status: .running)))
+        XCTAssertEqual(labelled.questions, [.init(text: "Which environment?", choices: [])])
+
+        let bare = try XCTUnwrap(ClarifyToolCallPreview.make(
+            for: clarifyHistoryRow(input: "Asking", output: nil, status: .running)))
+        XCTAssertEqual(bare.questions, [], "a bare verb isn't a question")
+
+        let none = try XCTUnwrap(ClarifyToolCallPreview.make(
+            for: clarifyHistoryRow(input: nil, output: nil, status: .running)))
+        XCTAssertEqual(none.questions, [])
+    }
+
+    func testAFinishedClarifyCallConduitCantReadSaysWhatItKnows() throws {
+        let question = #"{"question": "Ship it?", "choices": ["Yes", "No"]}"#
+        let refused = try XCTUnwrap(ClarifyToolCallPreview.make(
+            for: clarifyHistoryRow(input: question, output: #"{"error": "questions must be a non-empty array"}"#)))
+        XCTAssertEqual(refused.state, .notAnswered)
+        XCTAssertEqual(refused.error, "questions must be a non-empty array")
+
+        // A compact resume row carries no result: whether it was answered
+        // is unknown, so it isn't called unanswered.
+        let compact = try XCTUnwrap(ClarifyToolCallPreview.make(
+            for: clarifyHistoryRow(input: "Ship it?", output: nil)))
+        XCTAssertEqual(compact.state, .finished)
+        XCTAssertEqual(compact.questions, [.init(text: "Ship it?", choices: [])])
+
+        XCTAssertNil(ClarifyToolCallPreview.make(
+            for: ToolActivity(id: "call_2", name: "terminal", input: question, output: nil, status: .running)))
+    }
+
+    func testAClarifyResultConduitDoesntRecognizeKeepsTheToolCard() {
+        let question = #"{"questions": [{"question": "Ship it?", "choices": ["Yes", "No"]}]}"#
+        for output in [
+            #"{"responses": [{"question": "Ship it?", "status": "deferred", "user_response": null}], "outcome": "submitted"}"#,
+            #"{"responses": [{"question": "Ship it?", "status": "answered", "user_response": null}], "outcome": "submitted"}"#,
+            "done"
+        ] {
+            let tool = clarifyHistoryRow(input: question, output: output)
+            XCTAssertNil(ClarifyActivity.historyRecord(for: tool, rowID: "row-1"))
+            XCTAssertNil(ClarifyToolCallPreview.make(for: tool), "\(output) stays readable on the tool card")
+        }
+    }
+
+    func testClarifyArgumentsCutShortInASavedChatAreNeverShownAsTheQuestion() throws {
+        // A saved chat keeps the first 600 characters of a call's input.
+        let cut = String(#"{"questions": [{"question": "Which of these "# + String(repeating: "x", count: 700)).prefix(600)
+        let preview = try XCTUnwrap(ClarifyToolCallPreview.make(
+            for: clarifyHistoryRow(input: String(cut), output: nil, status: .running)))
+        XCTAssertEqual(preview.questions, [])
+    }
 }

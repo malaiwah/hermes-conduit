@@ -1009,6 +1009,13 @@ struct MessageBubble: View, Equatable {
             if let tool = message.tool,
                let clarify = ClarifyActivity.historyRecord(for: tool, rowID: message.id) {
                 ClarifyCard(message: message.presenting(clarify))
+            } else if let tool = message.tool, let preview = ClarifyToolCallPreview.make(for: tool) {
+                // A question Conduit can't answer: never its raw arguments.
+                ClarifyToolCallPreviewCard(
+                    preview: preview,
+                    timestamp: message.timestamp,
+                    offersPluginInstall: appState.notifierPlugin.offersInstall
+                )
             } else if let tool = message.tool, case let cards = RichCard.cards(for: tool), !cards.isEmpty {
                 // Maps and places Hermes showed (conduit_show): drawn from
                 // the call's saved answer, so they come back with the chat,
@@ -2521,6 +2528,8 @@ private struct SettledToolCardContent: View, Equatable {
     let sizeCategory: ContentSizeCategory
     /// Drawn inside a run's card; see SettledThinkingCardContent.
     var grouped = false
+    /// Resolves a picture or audio file a tool made on the Hermes host.
+    var gatewayResolver: GatewayMediaDataURLResolver?
     @Environment(\.chatRowDisclosure) private var disclosure
     /// Nil until tapped here; see SettledThinkingCardContent.
     @State private var tapped: Bool?
@@ -2537,6 +2546,13 @@ private struct SettledToolCardContent: View, Equatable {
             && lhs.expandToolsByDefault == rhs.expandToolsByDefault
             && lhs.sizeCategory == rhs.sizeCategory
             && lhs.grouped == rhs.grouped
+            && lhs.gatewayResolver === rhs.gatewayResolver
+    }
+
+    /// The readable part of a finished call's result, if Conduit has one.
+    private var presentation: ToolResultPresentation? {
+        guard let tool = message.tool, tool.status == .complete else { return nil }
+        return ToolResultPresentation.make(toolName: tool.name, output: tool.output)
     }
 
     var body: some View {
@@ -2610,33 +2626,23 @@ private struct SettledToolCardContent: View, Equatable {
                         Text(tool.name)
                             .font(.system(.caption2, design: .monospaced).weight(.semibold))
                             .foregroundStyle(.conduitTertiary)
+                        let presentation = self.presentation
+                        if let presentation {
+                            ToolResultBodyView(presentation: presentation, gatewayResolver: gatewayResolver)
+                        }
                         if let input = tool.input, !input.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(AppLocalization.string("Input"))
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(.conduitTertiary)
-                                SelectableTextView(
-                                    text: ToolCard.truncateForDisplay(input, maxLines: 500),
-                                    font: .monospacedSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .caption1).pointSize, weight: .regular),
-                                    textColor: .secondaryLabel,
-                                    maximumNumberOfLines: 0
-                                )
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
+                            ToolRawTextSection(
+                                title: AppLocalization.string("Input"),
+                                text: ToolResultPresentation.prettyJSON(input) ?? input
+                            )
                         }
                         if let output = tool.output, !output.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(AppLocalization.string("Output"))
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(.conduitTertiary)
-                                SelectableTextView(
-                                    text: ToolCard.truncateForDisplay(output, maxLines: 500),
-                                    font: .monospacedSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .caption1).pointSize, weight: .regular),
-                                    textColor: .secondaryLabel,
-                                    maximumNumberOfLines: 0
-                                )
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
+                            // What the tool returned, word for word, under
+                            // the readable part above.
+                            ToolRawTextSection(
+                                title: AppLocalization.string("Output"),
+                                text: ToolResultPresentation.prettyJSON(output) ?? output
+                            )
                         }
                     }
                     .padding(.horizontal, 11)
@@ -2670,7 +2676,8 @@ struct ToolCard: View {
                 message: message,
                 expandToolsByDefault: rowState.displayPreferences.expandToolsByDefault,
                 sizeCategory: sizeCategory,
-                grouped: grouped
+                grouped: grouped,
+                gatewayResolver: appState.gatewayMediaResolver
             )
             .equatable()
         }
@@ -2687,7 +2694,109 @@ struct ToolCard: View {
     }
 }
 
+/// One labeled block of a tool's raw input or result, in monospace.
+private struct ToolRawTextSection: View {
+    let title: String
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption2.bold())
+                .foregroundStyle(.conduitTertiary)
+            SelectableTextView(
+                text: ToolCard.truncateForDisplay(text, maxLines: 500),
+                font: .monospacedSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .caption1).pointSize, weight: .regular),
+                textColor: .secondaryLabel,
+                maximumNumberOfLines: 0
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 // MARK: - Clarify Card
+
+/// A clarify call Conduit can't answer, read-only: the question and its
+/// choices, and where it can be answered (see ClarifyToolCallPreview).
+struct ClarifyToolCallPreviewCard: View {
+    @ObservedObject var appLanguage = AppLanguageStore.shared
+    let preview: ClarifyToolCallPreview
+    let timestamp: String
+    /// The Conduit plugin isn't on the Hermes host: installing it is how
+    /// these questions become answerable here.
+    let offersPluginInstall: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "questionmark.bubble")
+                    .foregroundStyle(preview.state == .waiting ? .orange : .secondary)
+                    .accessibilityHidden(true)
+                Text(preview.state == .notAnswered
+                     ? AppLocalization.string("NOT ANSWERED")
+                     : AppLocalization.string("HERMES ASKED"))
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.5)
+                    .foregroundStyle(preview.state == .waiting ? .orange : .secondary)
+                Spacer(minLength: 8)
+                MessageTimestampLabel(timestamp: timestamp, tone: .supporting)
+            }
+
+            if preview.questions.isEmpty {
+                Text(AppLocalization.string("Hermes asked a question that didn't reach Conduit."))
+                    .font(.subheadline.weight(.semibold))
+            }
+            ForEach(Array(preview.questions.enumerated()), id: \.offset) { _, question in
+                VStack(alignment: .leading, spacing: 6) {
+                    SelectableTextView(
+                        text: question.text,
+                        font: .preferredFont(forTextStyle: .subheadline).withTraits(.traitBold),
+                        textColor: .label
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if !question.choices.isEmpty {
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(Array(question.choices.enumerated()), id: \.offset) { _, choice in
+                                Label(choice, systemImage: "circle")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+
+            if let error = preview.error {
+                Label(error, systemImage: "exclamationmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+            if let note {
+                Label(note, systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .chatCard(cornerRadius: 22, tint: .conduitAccent.opacity(0.05))
+    }
+
+    private var note: String? {
+        switch (preview.state, offersPluginInstall) {
+        case (.finished, _):
+            return nil
+        case (.notAnswered, _):
+            return AppLocalization.string("This question is no longer active.")
+        case (.waiting, true):
+            return AppLocalization.string("Conduit can't answer this question from here. If Hermes is still waiting, answer where this chat is running, or install the Conduit plugin on your Hermes host to answer questions in Conduit.")
+        case (.waiting, false):
+            return AppLocalization.string("Conduit can't answer this question from here. If Hermes is still waiting, answer where this chat is running.")
+        }
+    }
+}
+
 
 /// Where the visible question text lives on one clarification card. The
 /// header always renders the returned text exactly once; rows render their

@@ -94,7 +94,7 @@ extension ClarifyActivity {
         return record
     }
 
-    private static func jsonObject(_ text: String?) -> [String: Any]? {
+    fileprivate static func jsonObject(_ text: String?) -> [String: Any]? {
         guard let data = text?.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
               !data.isEmpty else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
@@ -102,19 +102,19 @@ extension ClarifyActivity {
 
     /// The call's questions: current `questions[]`, or one legacy scalar
     /// `{question, choices}`.
-    private static func askedQuestions(in arguments: [String: Any]?) -> [[String: Any]] {
+    fileprivate static func askedQuestions(in arguments: [String: Any]?) -> [[String: Any]] {
         guard let arguments else { return [] }
         if let questions = arguments["questions"] as? [[String: Any]] { return questions }
         return arguments["question"] != nil ? [arguments] : []
     }
 
-    private static func nonEmptyText(_ value: Any?) -> String? {
+    fileprivate static func nonEmptyText(_ value: Any?) -> String? {
         guard let text = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return nil }
         return text
     }
 
-    private static func textList(_ value: Any?) -> [String]? {
+    fileprivate static func textList(_ value: Any?) -> [String]? {
         guard let items = value as? [Any] else { return nil }
         return items.compactMap { nonEmptyText($0) }
     }
@@ -126,6 +126,80 @@ extension ClarifyActivity {
               let items = (try? JSONSerialization.jsonObject(with: data)) as? [Any] else { return nil }
         return items.compactMap { nonEmptyText($0) }
     }
+}
+
+/// A clarify call Conduit can't answer: its question never reached this
+/// device as an answerable card (another surface is driving the chat, or
+/// the request went out while Conduit was away), or the call ended without
+/// an answer Conduit can read. Shown as a read-only card with the question
+/// and its choices instead of the call's raw arguments.
+struct ClarifyToolCallPreview: Equatable {
+    struct Question: Equatable {
+        var text: String
+        var choices: [String]
+    }
+
+    enum State: Equatable {
+        /// The call is still running: Hermes may be waiting on an answer.
+        case waiting
+        /// The call failed or was refused.
+        case notAnswered
+        /// The call finished, but its result isn't one Conduit can read (a
+        /// compact resume row carries none): what was answered is unknown.
+        case finished
+    }
+
+    /// Empty when only Hermes' "Asking" label reached Conduit.
+    var questions: [Question]
+    var state: State
+    /// The tool's own error, when it refused or failed the call.
+    var error: String?
+
+    /// The preview for a clarify row that `ClarifyActivity.historyRecord`
+    /// doesn't turn into an answered card: a call still running, one that
+    /// finished with no result Conduit has, or one the tool refused. Nil for
+    /// any other tool, and for a result Conduit doesn't recognize, which
+    /// keeps the ordinary tool card so the result stays readable.
+    static func make(for tool: ToolActivity) -> ClarifyToolCallPreview? {
+        guard tool.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "clarify" else { return nil }
+        let output = tool.output?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let state: State
+        var error: String?
+        if tool.status == .running {
+            state = .waiting
+        } else if output.isEmpty {
+            state = .finished
+        } else if let refusal = ClarifyActivity.jsonObject(output).flatMap({ ClarifyActivity.nonEmptyText($0["error"]) }) {
+            state = .notAnswered
+            error = refusal
+        } else {
+            return nil
+        }
+
+        var questions: [Question] = []
+        if let arguments = ClarifyActivity.jsonObject(tool.input) {
+            questions = ClarifyActivity.askedQuestions(in: arguments).compactMap { call in
+                guard let text = ClarifyActivity.nonEmptyText(call["question"]) else { return nil }
+                return Question(text: text, choices: ClarifyActivity.textList(call["choices"]) ?? [])
+            }
+        } else if let label = ClarifyActivity.nonEmptyText(tool.input),
+                  !label.hasPrefix("{"), !label.hasPrefix("[") {
+            // Hermes' tool label ("Asking <question>"), or a compact resume
+            // row's argument preview. Arguments cut short in a saved chat
+            // aren't JSON any more and are never shown as the question.
+            let question = label.hasPrefix(Self.liveLabelVerb + " ")
+                ? String(label.dropFirst(Self.liveLabelVerb.count + 1))
+                : (label == Self.liveLabelVerb ? "" : label)
+            if let text = ClarifyActivity.nonEmptyText(question) {
+                questions = [Question(text: text, choices: [])]
+            }
+        }
+        return ClarifyToolCallPreview(questions: questions, state: state, error: error)
+    }
+
+    /// The verb Hermes' tool label puts before a clarify question
+    /// (`agent/display.py` `_TOOL_VERBS`).
+    static let liveLabelVerb = "Asking"
 }
 
 extension ChatMessage {
