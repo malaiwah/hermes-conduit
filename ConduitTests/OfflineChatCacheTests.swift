@@ -836,6 +836,62 @@ final class OfflineChatCacheTests: XCTestCase {
         XCTAssertNotNil(store.load(dashboardID: active.id, profile: "default"))
     }
 
+    func testRemoveTranscriptsDropsTheDeletedConversationUnderEveryId() throws {
+        let store = makeStore()
+        let dashboard = UUID()
+        var row = session("runtime-1")
+        row.storedSessionId = "stored-1"
+        store.record(
+            dashboardID: dashboard,
+            profile: "default",
+            sessionID: "stored-1",
+            title: "One",
+            messages: [ChatMessage(id: "old", role: .user, content: "Old", timestamp: "1")],
+            sessions: [row, session("stored-2")]
+        )
+        store.record(
+            dashboardID: dashboard,
+            profile: "default",
+            sessionID: "stored-2",
+            title: "Two",
+            messages: [ChatMessage(id: "new", role: .user, content: "New", timestamp: "2")],
+            sessions: [row, session("stored-2")]
+        )
+
+        // The delete path passes the row's runtime id; the saved row knows
+        // the durable id the transcript is keyed under.
+        store.removeTranscripts(sessionIDs: ["runtime-1"], dashboardID: dashboard, profile: "default")
+
+        let snapshot = try XCTUnwrap(store.load(dashboardID: dashboard, profile: "default"))
+        XCTAssertNil(snapshot.transcript(for: "stored-1"))
+        XCTAssertNil(store.loadTranscript("stored-1", dashboardID: dashboard, profile: "default"),
+                     "The deleted conversation's transcript file is removed")
+        XCTAssertEqual(snapshot.transcripts.map(\.sessionID), ["stored-2"])
+        XCTAssertEqual(snapshot.lastSessionID, "stored-2")
+        XCTAssertFalse(snapshot.sessions.contains { $0.matches(["runtime-1"]) },
+                       "The deleted conversation's saved row is removed")
+        XCTAssertNotNil(store.loadTranscript("stored-2", dashboardID: dashboard, profile: "default"))
+    }
+
+    func testDeleteRevokesTheSavedCopyAndItsLastSessionPointer() throws {
+        let (appState, store, dashboard) = makeAppState()
+        seedCopy(store, dashboard: dashboard)
+        appState.presentOfflineChatIfAvailable(dashboardID: dashboard)
+        XCTAssertEqual(appState.offlineChatPresentation?.displayedSessionID, "stored-a")
+
+        appState.revokeDeletedConversationIdentity(sessionIDs: ["stored-a"], profile: "default")
+
+        let snapshot = try XCTUnwrap(store.load(dashboardID: dashboard, profile: "default"))
+        XCTAssertNil(snapshot.transcript(for: "stored-a"))
+        XCTAssertNil(snapshot.lastSessionID,
+                     "The deleted conversation cannot stay the last-session pointer")
+        XCTAssertNil(store.loadTranscript("stored-a", dashboardID: dashboard, profile: "default"))
+        // The copy cannot come back on the next cold launch.
+        appState.dismissOfflineChatPresentation()
+        appState.presentOfflineChatIfAvailable(dashboardID: dashboard)
+        XCTAssertNil(appState.offlineChatPresentation?.displayedTranscript)
+    }
+
     /// A switch to another dashboard saves the outgoing one's Chats list as
     /// it shows and keeps its saved chats for the next visit there, and lists
     /// the target's own while it answers.

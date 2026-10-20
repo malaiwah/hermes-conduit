@@ -532,6 +532,40 @@ final class OfflineChatCacheStore {
         }
     }
 
+    /// Removes a deleted conversation's copies from this scope: its saved
+    /// transcript under every id it answered to, its saved row, and the
+    /// last-session pointer when it named the conversation. The index is
+    /// rewritten first, like `record` writes it, then transcript files it
+    /// no longer lists go — a failed index write never orphans a listed
+    /// copy.
+    func removeTranscripts(sessionIDs: Set<String>, dashboardID: UUID, profile: String) {
+        guard !sessionIDs.isEmpty,
+              var snapshot = load(dashboardID: dashboardID, profile: profile) else { return }
+        // The transcript is keyed by the conversation's durable id, which
+        // the delete path may not have passed; the saved row knows every id
+        // the conversation answered to when it was recorded.
+        var doomed = sessionIDs
+        let doomedRows = snapshot.sessions.filter { $0.matches(sessionIDs) }
+        for row in doomedRows {
+            doomed.insert(row.id)
+            doomed.formUnion(row.aliases)
+        }
+        let lastIsDoomed = snapshot.lastSessionID.map { doomed.contains($0) } == true
+        let keptTranscripts = snapshot.transcripts.filter { !doomed.contains($0.sessionID) }
+        let keptSessions = snapshot.sessions.filter { !doomedRows.contains($0) }
+        guard keptTranscripts.count != snapshot.transcripts.count
+            || keptSessions.count != snapshot.sessions.count
+            || lastIsDoomed else { return }
+        if lastIsDoomed {
+            // The newest remaining transcript, as `record` would leave it.
+            snapshot.lastSessionID = keptTranscripts.first?.sessionID
+        }
+        snapshot.transcripts = keptTranscripts
+        snapshot.sessions = keptSessions
+        guard write(snapshot, dashboardID: dashboardID, profile: profile) else { return }
+        removeUnlistedTranscripts(snapshot, dashboardID: dashboardID, profile: profile)
+    }
+
     /// At most `maxSessions` rows. Slots are reserved first for the rows of
     /// `keptSessionIDs` (the retained transcripts, current conversation
     /// first) found in the live catalog or, failing that, in the previous

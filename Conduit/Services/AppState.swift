@@ -18768,8 +18768,9 @@ final class AppState: ObservableObject {
     }
 
     /// Explicit deletion revokes the conversation's identity: index
-    /// mappings, scroll/resume state, and cached presentation (with any
-    /// pending cards) must not survive under any of its aliases.
+    /// mappings, scroll/resume state, cached presentation (with any
+    /// pending cards), and the saved offline copy must not survive under
+    /// any of its aliases.
     func revokeDeletedConversationIdentity(sessionIDs: Set<String>, profile: String) {
         conversationIdentityIndex.removeSessionIDs(sessionIDs, profile: profile)
         chatResumeCoordinator.removeSessions(
@@ -18780,6 +18781,16 @@ final class AppState: ObservableObject {
             profile: profile,
             sessionIDs: Array(sessionIDs)
         )
+        // The saved copy goes too: otherwise the next cold launch or
+        // dashboard switch shows the deleted conversation's transcript as
+        // the saved copy, and typing over it targets the deleted session.
+        if let dashboardID = activeDashboardID {
+            offlineChatCache.removeTranscripts(
+                sessionIDs: sessionIDs,
+                dashboardID: dashboardID,
+                profile: profile
+            )
+        }
     }
 
     private func encodedSessionID(_ sessionID: String) -> String {
