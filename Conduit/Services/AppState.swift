@@ -11790,7 +11790,7 @@ final class AppState: ObservableObject {
     /// remains.
     private func clearDashboardWebSession(dashboardID: UUID?, baseURL: String?) {
         if let dashboardID {
-            Task { await DashboardCookiePersistence.clearWebKitSession(for: dashboardID) }
+            DashboardCookiePersistence.scheduleWebKitSessionClear(for: dashboardID)
             if let baseURL {
                 DashboardCookiePersistence.clearNativeCookies(dashboardID: dashboardID, baseURL: baseURL)
             }
@@ -12242,7 +12242,7 @@ final class AppState: ObservableObject {
         // identified WebKit store and the dashboard's native jar (plus
         // exact-host shared-jar residue). Sibling dashboards sharing a parent
         // domain are untouched.
-        Task { await DashboardCookiePersistence.clearWebKitSession(for: id) }
+        DashboardCookiePersistence.scheduleWebKitSessionClear(for: id)
         DashboardCookiePersistence.clearNativeCookies(dashboardID: id, baseURL: dashboard.normalizedURL)
     }
 
