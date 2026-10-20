@@ -214,6 +214,43 @@ final class NotificationDashboardOwnershipTests: XCTestCase {
         XCTAssertFalse(opened)
         XCTAssertNotNil(appState.errorMessage)
     }
+
+    /// #789: a push that can never open here is final, so the route doesn't
+    /// retry it and repeat the error.
+    func testUnknownDashboardOpenIsFinal() async {
+        let saved = SavedDashboard(id: dashboardA, label: "Mac", normalizedURL: "https://mac.tailnet.ts.net")
+        let appState = makeAppState(registry: SavedDashboardRegistry(activeDashboardID: dashboardA, dashboards: [saved]))
+
+        let outcome = await appState.openNotificationTargetOutcome(decisionTarget(dashboardID: UUID()))
+
+        XCTAssertEqual(outcome, .failed)
+    }
+
+    /// #789: a switch that ends on the sign-in screen waits on the user, so
+    /// the route doesn't retry it.
+    func testSwitchThatNeedsSignInIsFinal() async {
+        let savedA = SavedDashboard(id: dashboardA, label: "Mac", normalizedURL: "https://mac.tailnet.ts.net")
+        let savedB = SavedDashboard(id: dashboardB, label: "VPS", normalizedURL: "https://hermes.example.com")
+        let appState = makeAppState(registry: SavedDashboardRegistry(activeDashboardID: dashboardA, dashboards: [savedA, savedB]))
+
+        let outcome = await appState.openNotificationTargetOutcome(decisionTarget(dashboardID: dashboardB))
+
+        XCTAssertEqual(outcome, .failed)
+        XCTAssertTrue(appState.showLogin)
+        XCTAssertNotNil(appState.errorMessage)
+    }
+
+    /// #789: a push for the dashboard on screen that fails only because the
+    /// connection isn't up yet is retried once it is.
+    func testActiveDashboardOpenWithoutConnectionIsRetried() async {
+        let saved = SavedDashboard(id: dashboardA, label: "Mac", normalizedURL: "https://mac.tailnet.ts.net")
+        let appState = makeAppState(registry: SavedDashboardRegistry(activeDashboardID: dashboardA, dashboards: [saved]))
+
+        let outcome = await appState.openNotificationTargetOutcome(decisionTarget(dashboardID: dashboardA))
+
+        XCTAssertEqual(outcome, .retry)
+        XCTAssertNil(appState.errorMessage)
+    }
 }
 
 // MARK: - Relay gateway discriminator (decision routing)

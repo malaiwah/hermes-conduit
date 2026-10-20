@@ -661,9 +661,27 @@ final class PushNotificationService: ObservableObject {
     /// Callers waiting for another proof to finish: each nonce works once.
     private var tokenProofWaiters: [CheckedContinuation<Void, Never>] = []
     private var navigationRetryTask: Task<Void, Never>?
+    /// Retrying a failed open is bounded by time from the tap, not by a
+    /// count (#789): a cold launch on a slow network can fail several reads
+    /// while it connects and loads the session catalog, and the tap should
+    /// still open once it has. A disconnected app makes no attempt (the
+    /// route waits for `isConnected`), and the reconnect retries the target
+    /// while it is still pending.
     private var pendingRetryCount = 0
-    private let maxNotificationRetriesPerTarget = 1
+    private var pendingRouteDeadline: ContinuousClock.Instant?
+    /// Whether an open of the pending tap has started, and when its
+    /// scheduled retry last came due: the two that decide whether a run
+    /// past the window may still open it (`beginNotificationRoute`).
+    private var pendingRouteOpenStarted = false
+    private var pendingRouteRetryFiredAt: ContinuousClock.Instant?
+    /// How late after coming due a scheduled retry may still start past the
+    /// window. Its run normally follows at once; one held back longer (the
+    /// app was suspended meanwhile) is a late open like any other.
+    private let scheduledRetryStartAllowance: Duration = .seconds(2)
     private let retryDelay: Duration
+    private let maxRetryDelay: Duration = .seconds(8)
+    private let routeRetryWindow: Duration
+    private let now: () -> ContinuousClock.Instant
 
     var isEnabled: Bool { registration != nil && preferences.enabled }
     var statusText: String {
@@ -673,8 +691,14 @@ final class PushNotificationService: ObservableObject {
         return AppLocalization.string("Off")
     }
 
-    init(retryDelay: Duration = .seconds(1.5)) {
+    init(
+        retryDelay: Duration = .seconds(1),
+        routeRetryWindow: Duration = .seconds(30),
+        now: @escaping () -> ContinuousClock.Instant = { ContinuousClock.now }
+    ) {
         self.retryDelay = retryDelay
+        self.routeRetryWindow = routeRetryWindow
+        self.now = now
         if let data = KeychainHelper.loadPushRegistration(),
            var saved = try? JSONDecoder().decode(StoredRegistration.self, from: data) {
             // Registrations saved before the relay was recorded don't say
@@ -1777,6 +1801,9 @@ final class PushNotificationService: ObservableObject {
         navigationRetryTask = nil
         pendingTarget = target
         pendingRetryCount = 0
+        pendingRouteDeadline = now().advanced(by: routeRetryWindow)
+        pendingRouteOpenStarted = false
+        pendingRouteRetryFiredAt = nil
         navigationAttempt += 1
     }
 
@@ -1805,23 +1832,69 @@ final class PushNotificationService: ObservableObject {
         navigationRetryTask = nil
         pendingTarget = nil
         pendingRetryCount = 0
+        pendingRouteDeadline = nil
+        pendingRouteOpenStarted = false
+        pendingRouteRetryFiredAt = nil
     }
 
+    /// An open of `target` is starting: a retry still waiting would only
+    /// cancel it when it fires, so it stands down. Returns false, clearing
+    /// the target, when the tap already had an open and its window has run
+    /// out: the app went offline mid-open or while a retry was due, and the
+    /// reconnect came too late for that tap to open now (#789). A tap's
+    /// first open always runs, however slowly the launch connected, and so
+    /// does the retry the window's end scheduled, when it starts on time.
     @discardableResult
-    func handleFailedNotificationRoute(_ target: ConduitNotificationTarget) -> Bool {
-        guard pendingTarget == target,
-              pendingRetryCount < maxNotificationRetriesPerTarget else {
+    func beginNotificationRoute(_ target: ConduitNotificationTarget) -> Bool {
+        guard pendingTarget == target else { return true }
+        navigationRetryTask?.cancel()
+        navigationRetryTask = nil
+        let startedAt = now()
+        let scheduledRetry = pendingRouteRetryFiredAt.map {
+            $0.duration(to: startedAt) <= scheduledRetryStartAllowance
+        } ?? false
+        pendingRouteRetryFiredAt = nil
+        if pendingRouteOpenStarted, !scheduledRetry,
+           let deadline = pendingRouteDeadline, startedAt >= deadline {
             clearPendingTarget(target)
             return false
         }
+        pendingRouteOpenStarted = true
+        return true
+    }
+
+    /// The route ran while the app is offline: a retry that came due now
+    /// has nothing to open, and the reconnect that opens the tap is not it.
+    func notificationRouteAwaitsConnection(_ target: ConduitNotificationTarget) {
+        guard pendingTarget == target else { return }
+        pendingRouteRetryFiredAt = nil
+    }
+
+    /// Schedules another open of `target` after one that can still succeed
+    /// failed, backing off (1 s, 2 s, 4 s, then every 8 s) until the window
+    /// that started at the tap runs out; the failure after that clears the
+    /// target. Returns whether a retry is scheduled.
+    @discardableResult
+    func handleFailedNotificationRoute(_ target: ConduitNotificationTarget) -> Bool {
+        guard pendingTarget == target, let deadline = pendingRouteDeadline else {
+            clearPendingTarget(target)
+            return false
+        }
+        let failedAt = now()
+        guard failedAt < deadline else {
+            clearPendingTarget(target)
+            return false
+        }
+        let backoff = min(self.retryDelay * (1 << min(pendingRetryCount, 3)), maxRetryDelay)
+        let retryDelay = min(backoff, failedAt.duration(to: deadline))
         pendingRetryCount += 1
         navigationRetryTask?.cancel()
-        let retryDelay = self.retryDelay
         navigationRetryTask = Task { [weak self] in
             try? await Task.sleep(for: retryDelay)
             guard !Task.isCancelled else { return }
             guard let self else { return }
             self.navigationRetryTask = nil
+            self.pendingRouteRetryFiredAt = self.now()
             self.navigationAttempt += 1
         }
         return true
