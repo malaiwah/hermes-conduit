@@ -73,11 +73,39 @@ final class ToolResultPresentationTests: XCTestCase {
             .init(title: "Blog", url: "https://swift.org/blog", snippet: nil),
             .init(title: "https://down.example", url: "https://down.example", snippet: nil,
                   error: "Extract backend returned no result for this URL"),
-            .init(title: "", url: "", snippet: nil, error: "Invalid URL: not a string")
+            .init(title: "", url: "", snippet: nil, error: "Invalid URL: not a string", position: 4)
         ]), "a page that failed says so, and only web links are offered")
         if case .links(let links)? = extracted.body {
             XCTAssertEqual(links.map(\.opensPage), [true, true, false])
         }
+    }
+
+    func testFailedItemsThatReadTheSameStayDistinctRows() throws {
+        let twice = #"{"results": [{"url": "", "title": "", "error": "Invalid URL: not a string"}, {"url": "", "title": "", "error": "Invalid URL: not a string"}]}"#
+        let presentation = try XCTUnwrap(ToolResultPresentation.make(toolName: "web_extract", output: twice))
+        guard case .links(let links)? = presentation.body else { return XCTFail("expected the failed items") }
+        XCTAssertEqual(links.count, 2)
+        XCTAssertEqual(Set(links.map(\.id)).count, 2, "each row keeps its own identity")
+
+        let todos = #"{"todos": [{"id": "1", "content": "First", "status": "pending"}, {"id": "1#1", "content": "Second", "status": "pending"}, {"id": "1", "content": "Third", "status": "pending"}]}"#
+        let plan = try XCTUnwrap(ToolResultPresentation.make(toolName: "todo_list", output: todos))
+        guard case .todos(let items)? = plan.body else { return XCTFail("expected a plan") }
+        XCTAssertEqual(items.map(\.content), ["First", "Second", "Third"])
+        XCTAssertEqual(Set(items.map(\.id)).count, 3, "a repeated id doesn't merge tasks")
+    }
+
+    func testAnExitCodeIsANumberNotAFlag() {
+        XCTAssertNil(ToolResultPresentation.make(toolName: "terminal", output: #"{"output": "", "exit_code": true}"#))
+        XCTAssertEqual(ToolResultPresentation.make(toolName: "terminal", output: #"{"output": "", "exit_code": 2.0}"#)?.exitCode, 2)
+    }
+
+    func testTheRememberedPresentationMatchesAFreshOne() {
+        let output = #"{"output": "built"}"#
+        XCTAssertEqual(ToolResultPresentation.cached(toolName: "terminal", output: output),
+                       ToolResultPresentation.make(toolName: "terminal", output: output))
+        XCTAssertEqual(ToolResultPresentation.cached(toolName: "terminal", output: output)?.body, .text("built"))
+        XCTAssertNil(ToolResultPresentation.cached(toolName: "memory", output: output),
+                     "the tool is part of what is remembered")
     }
 
     func testAFileAToolMadeIsDrawnFromTheHostOrOfferedAsALink() throws {

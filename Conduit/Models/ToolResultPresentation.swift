@@ -11,7 +11,9 @@
 
 import Foundation
 
+/// The readable part of one bundled Hermes tool's stored result.
 struct ToolResultPresentation: Equatable {
+    /// One task of a todo plan, as the tool last left it.
     struct TodoItem: Equatable, Identifiable {
         enum Status: String, Equatable {
             case pending
@@ -27,6 +29,7 @@ struct ToolResultPresentation: Equatable {
         var depth: Int = 0
     }
 
+    /// A web page a tool returned, or an item it couldn't read.
     struct Link: Equatable, Identifiable {
         var title: String
         /// Empty for an item Hermes couldn't read at all (no usable URL).
@@ -34,7 +37,10 @@ struct ToolResultPresentation: Equatable {
         var snippet: String?
         /// The page couldn't be read: what Hermes said instead.
         var error: String?
-        var id: String { url.isEmpty ? "error:\(title):\(error ?? "")" : url }
+        /// The item's place in the result: tells apart failed items with no
+        /// URL, which can repeat word for word.
+        var position = 0
+        var id: String { url.isEmpty ? "error:\(position)" : url }
         /// Only an http(s) page is opened from the row.
         var opensPage: Bool { ToolResultPresentation.isWebURL(url) }
     }
@@ -83,7 +89,10 @@ struct ToolResultPresentation: Equatable {
         let error = text(object["error"])
         let notice = text(object["fallback_warning"])
         var exitCode: Int?
-        if let code = (object["exit_code"] as? NSNumber)?.intValue, code != 0 { exitCode = code }
+        if let number = object["exit_code"] as? NSNumber,
+           CFGetTypeID(number) != CFBooleanGetTypeID(), number.intValue != 0 {
+            exitCode = number.intValue
+        }
 
         let body: Body?
         switch name {
@@ -118,6 +127,41 @@ struct ToolResultPresentation: Equatable {
         guard body != nil || error != nil || exitCode != nil || notice != nil else { return nil }
         return ToolResultPresentation(body: body, error: error, exitCode: exitCode, notice: notice)
     }
+
+    /// `make`, remembered per result: an opened row is drawn again on every
+    /// change to its message, and with tools expanded by default every
+    /// settled row would parse its result each time.
+    static func cached(toolName: String, output: String?) -> ToolResultPresentation? {
+        guard let output else { return nil }
+        let bytes = output.utf8.count
+        guard bytes <= parseLimit else { return nil }
+        let name = toolName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        // A short key; the hit is checked against the whole result, so a
+        // hash collision only costs a parse.
+        let key = "\(name):\(bytes):\(output.hashValue)" as NSString
+        if let hit = memo.object(forKey: key), hit.toolName == name, hit.output == output { return hit.value }
+        let value = make(toolName: name, output: output)
+        memo.setObject(Memo(toolName: name, output: output, value: value), forKey: key, cost: bytes)
+        return value
+    }
+
+    private final class Memo {
+        let toolName: String
+        let output: String
+        let value: ToolResultPresentation?
+        init(toolName: String, output: String, value: ToolResultPresentation?) {
+            self.toolName = toolName
+            self.output = output
+            self.value = value
+        }
+    }
+
+    private static let memo: NSCache<NSString, Memo> = {
+        let cache = NSCache<NSString, Memo>()
+        cache.countLimit = 256
+        cache.totalCostLimit = 4 * 1024 * 1024
+        return cache
+    }()
 
     /// `text` reformatted with sorted keys and indentation when it is a JSON
     /// object or array under `parseLimit`; nil for anything else, which is
@@ -195,10 +239,18 @@ struct ToolResultPresentation: Equatable {
     private static func todos(_ value: Any?) -> [TodoItem]? {
         guard let rows = value as? [[String: Any]] else { return nil }
         var parents: [String: String] = [:]
+        var usedIDs = Set<String>()
         var items = rows.enumerated().compactMap { index, row -> TodoItem? in
             guard let content = text(row["content"]) else { return nil }
             let status = (row["status"] as? String).flatMap { TodoItem.Status(rawValue: $0.lowercased()) } ?? .pending
-            let id = text(row["id"]) ?? "todo-\(index)"
+            // A repeated id would merge rows in the checklist.
+            let given = text(row["id"]) ?? "todo-\(index)"
+            var id = given
+            var attempt = index
+            while !usedIDs.insert(id).inserted {
+                id = "\(given)#\(attempt)"
+                attempt += 1
+            }
             if let parent = text(row["parent"]) { parents[id] = parent }
             return TodoItem(id: id, content: content, status: status)
         }
@@ -221,7 +273,7 @@ struct ToolResultPresentation: Equatable {
     private static func links(_ value: Any?, snippetKey: String?) -> [Link]? {
         guard let rows = value as? [[String: Any]] else { return nil }
         var seen = Set<String>()
-        let items = rows.compactMap { row -> Link? in
+        let items = rows.enumerated().compactMap { position, row -> Link? in
             let error = text(row["error"])
             let url = text(row["url"])?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if isWebURL(url) {
@@ -231,7 +283,7 @@ struct ToolResultPresentation: Equatable {
             }
             // An item Hermes couldn't read still says why, without a link.
             guard let error else { return nil }
-            return Link(title: url.isEmpty ? (text(row["title"]) ?? "") : url, url: "", snippet: nil, error: error)
+            return Link(title: url.isEmpty ? (text(row["title"]) ?? "") : url, url: "", snippet: nil, error: error, position: position)
         }
         return items.isEmpty ? nil : items
     }

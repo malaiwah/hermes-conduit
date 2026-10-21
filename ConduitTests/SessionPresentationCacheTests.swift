@@ -1751,6 +1751,42 @@ final class SessionPresentationCacheTests: XCTestCase {
         XCTAssertEqual(restoredClarify?.clarify?.questions.first?.choices.count, 2)
     }
 
+    func testRestoringAPendingClarificationKeepsEarlierAnsweredQuestions() {
+        let cache = SessionPresentationCache.shared
+        let sessionId = "test-merge-clarify-keep-\(UUID().uuidString)"
+        let profile = "test"
+        let pending = ClarifyActivity(
+            requestId: "req-new",
+            question: "Which branch?",
+            choices: [ClarifyChoice(label: "main", value: "main")],
+            status: .pending
+        )
+        cache.save([
+            ChatMessage(id: "clarify-req-new", role: .clarify, content: "Which branch?",
+                        timestamp: "2024-01-01T10:05:00Z", clarify: pending),
+        ], profile: profile, sessionIDs: [sessionId])
+        defer { cache.clear(profile: profile) }
+
+        let answered = ChatMessage(
+            id: "tool-old", role: .tool, content: "", timestamp: "2024-01-01T10:00:00Z",
+            tool: ToolActivity(id: "call-old", name: "clarify",
+                               input: #"{"question": "Ship it?", "choices": ["Yes", "No"]}"#,
+                               output: #"{"question": "Ship it?", "choices_offered": ["Yes", "No"], "user_response": "Yes"}"#,
+                               status: .complete)
+        )
+        let waiting = ChatMessage(
+            id: "tool-new", role: .tool, content: "", timestamp: "2024-01-01T10:05:00Z",
+            tool: ToolActivity(id: "call-new", name: "clarify",
+                               input: #"{"question": "Which branch?"}"#, output: nil, status: .running)
+        )
+        let merged = cache.merge([answered, waiting], profile: profile, sessionIDs: [sessionId],
+                                 includePendingClarifications: true)
+
+        XCTAssertTrue(merged.contains { $0.id == "tool-old" }, "an answered question stays in the chat")
+        XCTAssertFalse(merged.contains { $0.id == "tool-new" }, "the restored card stands for its own generic row")
+        XCTAssertTrue(merged.contains { $0.clarify?.requestId == "req-new" })
+    }
+
     func testMergeDoesNotRestoreClarificationWhenNotRequested() {
         let cache = SessionPresentationCache.shared
         let sessionId = "test-merge-clarify-off-\(UUID().uuidString)"

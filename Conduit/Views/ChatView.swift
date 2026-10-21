@@ -1014,7 +1014,7 @@ struct MessageBubble: View, Equatable {
                 ClarifyToolCallPreviewCard(
                     preview: preview,
                     timestamp: message.timestamp,
-                    offersPluginInstall: appState.notifierPlugin.offersInstall
+                    offersPluginInstall: rowState.offersNotifierPluginInstall
                 )
             } else if let tool = message.tool, case let cards = RichCard.cards(for: tool), !cards.isEmpty {
                 // Maps and places Hermes showed (conduit_show): drawn from
@@ -2552,7 +2552,7 @@ private struct SettledToolCardContent: View, Equatable {
     /// The readable part of a finished call's result, if Conduit has one.
     private var presentation: ToolResultPresentation? {
         guard let tool = message.tool, tool.status == .complete else { return nil }
-        return ToolResultPresentation.make(toolName: tool.name, output: tool.output)
+        return ToolResultPresentation.cached(toolName: tool.name, output: tool.output)
     }
 
     var body: some View {
@@ -2758,9 +2758,13 @@ struct ClarifyToolCallPreviewCard: View {
                     if !question.choices.isEmpty {
                         VStack(alignment: .leading, spacing: 3) {
                             ForEach(Array(question.choices.enumerated()), id: \.offset) { _, choice in
-                                Label(choice, systemImage: "circle")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                                Label {
+                                    Text(choice)
+                                } icon: {
+                                    Image(systemName: "circle").accessibilityHidden(true)
+                                }
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
                             }
                         }
                         .accessibilityElement(children: .combine)

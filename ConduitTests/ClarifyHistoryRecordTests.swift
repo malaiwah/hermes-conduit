@@ -229,4 +229,12 @@ extension ClarifyBatchStateTests {
             for: clarifyHistoryRow(input: String(cut), output: nil, status: .running)))
         XCTAssertEqual(preview.questions, [])
     }
+
+    func testAClarifyResultWithANullErrorReadsBack() throws {
+        let tool = clarifyHistoryRow(
+            input: #"{"question": "Ship it?", "choices": ["Yes", "No"]}"#,
+            output: #"{"question": "Ship it?", "choices_offered": ["Yes", "No"], "user_response": "Yes", "error": null}"#
+        )
+        XCTAssertEqual(try XCTUnwrap(ClarifyActivity.historyRecord(for: tool, rowID: "row-1")).questions.first?.resolvedAnswer, "Yes")
+    }
 }

@@ -25,7 +25,7 @@ extension ClarifyActivity {
         guard tool.name.lowercased() == "clarify",
               tool.status == .complete,
               let result = jsonObject(tool.output),
-              result["error"] == nil else { return nil }
+              result["error"] == nil || result["error"] is NSNull else { return nil }
         let rows: [[String: Any]]
         if let responses = result["responses"] as? [[String: Any]] {
             rows = responses

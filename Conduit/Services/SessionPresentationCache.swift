@@ -407,8 +407,13 @@ final class SessionPresentationCache {
             // and hide that duplicate generic tool row behind the answerable
             // clarification UI.
             if !pendingClarifications.isEmpty {
+                // Only the generic row the card stands for: a clarify that
+                // reads back as its answered card (an earlier question)
+                // stays in the chat.
                 merged.removeAll { message in
-                    message.role == .tool && message.tool?.name.lowercased() == "clarify"
+                    guard message.role == .tool, let tool = message.tool,
+                          tool.name.lowercased() == "clarify" else { return false }
+                    return ClarifyActivity.historyRecord(for: tool, rowID: message.id) == nil
                 }
                 for clarify in pendingClarifications where !merged.contains(where: {
                     $0.clarify?.requestId == clarify.requestId

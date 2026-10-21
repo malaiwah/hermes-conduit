@@ -10,6 +10,7 @@
 import SwiftUI
 import UIKit
 
+/// The readable part of an opened tool row, above its raw Input and Output.
 struct ToolResultBodyView: View {
     @ObservedObject var appLanguage = AppLanguageStore.shared
     let presentation: ToolResultPresentation
@@ -62,7 +63,7 @@ struct ToolResultBodyView: View {
                     .font(.subheadline)
                     .padding(.leading, CGFloat(min(item.depth, 6)) * 16)
                     .accessibilityElement(children: .combine)
-                    .accessibilityValue(Self.depthLabel(for: item))
+                    .modifier(SubtaskAccessibilityValue(isSubtask: item.depth > 0))
                 }
             }
         case .diff(let diff):
@@ -139,12 +140,6 @@ struct ToolResultBodyView: View {
         .contentShape(Rectangle())
     }
 
-    /// VoiceOver's word for a nested task; nothing for a top-level one.
-    private static func depthLabel(for item: ToolResultPresentation.TodoItem) -> String {
-        guard item.depth > 0 else { return String() }
-        return AppLocalization.string("Subtask")
-    }
-
     private static func symbol(for status: ToolResultPresentation.TodoItem.Status) -> String {
         switch status {
         case .pending: return "circle"
@@ -183,5 +178,19 @@ struct ToolResultBodyView: View {
             result.append(NSAttributedString(string: text, attributes: [.foregroundColor: color, .font: font]))
         }
         return result
+    }
+}
+
+/// VoiceOver hears "Subtask" on a nested task, and nothing extra on a
+/// top-level one.
+private struct SubtaskAccessibilityValue: ViewModifier {
+    let isSubtask: Bool
+
+    func body(content: Content) -> some View {
+        if isSubtask {
+            content.accessibilityValue(AppLocalization.string("Subtask"))
+        } else {
+            content
+        }
     }
 }

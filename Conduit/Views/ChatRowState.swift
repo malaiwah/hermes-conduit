@@ -32,6 +32,9 @@ struct ChatRowState: Equatable {
     /// Each live card's last row: earlier rows with that live name show
     /// that it was updated below.
     var latestLiveRows: [String: String] = [:]
+    /// The Hermes host has no Conduit plugin: a question Conduit can't
+    /// answer says that installing it would let it.
+    var offersNotifierPluginInstall = false
 
     init() {}
 
@@ -51,6 +54,7 @@ struct ChatRowState: Equatable {
         displayPreferences = appState.displayPreferences
         voiceCallLinksRevision = appState.voiceCallChatLinksRevision
         latestLiveRows = RichCard.latestLiveRows(appState.messages)
+        offersNotifierPluginInstall = appState.notifierPlugin.offersInstall
     }
 
     /// `AppState.canReact(to:)`, from these values alone.
