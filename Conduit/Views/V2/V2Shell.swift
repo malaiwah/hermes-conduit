@@ -760,7 +760,7 @@ struct V2Shell: View {
         switch selectedTab {
         case .chats:
             guard !mainButtonNewChat, !isRootCovered(.chats, split: split) else { return nil }
-            return V2TabAction(title: AppLocalization.string("New Chat"), symbol: "square.and.pencil")
+            return V2TabAction(title: AppLocalization.string("V2Tab.NewChat"), symbol: "square.and.pencil")
         case .tasks:
             if V2TasksView.Segment(rawValue: tasksSegmentRaw) == .scheduled {
                 return V2TabAction(title: AppLocalization.string("New job"), symbol: "plus")
@@ -1046,8 +1046,11 @@ private struct V2CapsuleTabBar: View {
                 let title = shownAction?.title ?? tab.title
                 let symbol = shownAction?.symbol ?? tab.symbol
                 Button {
+                    // A selected tab without an action (Chats over a
+                    // project page, or beside the New chat button) stays
+                    // inert, as before: its label promises nothing.
                     if isSelected {
-                        perform()
+                        if shownAction != nil { perform() }
                         return
                     }
                     withAnimation(ConduitMotion.overshoot(reduceMotion: reduceMotion)) {
