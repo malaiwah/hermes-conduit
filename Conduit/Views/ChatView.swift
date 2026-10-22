@@ -59,6 +59,9 @@ struct ChatView: View {
     @State private var latestAnimationTask: Task<Void, Never>?
     /// The overview of every pinned reply, from the pinned bar (#918).
     @State private var showsPinnedReplies = false
+    /// How much of the transcript's top the plan card takes (0 without
+    /// one); the first message starts under it rather than behind it.
+    @State private var chatCardsHeight: CGFloat = 0
     /// Gives up on an overview reveal whose reply the opened chat hasn't
     /// loaded (an older part of it).
     @State private var pinnedRevealFallbackTask: Task<Void, Never>?
@@ -487,7 +490,7 @@ struct ChatView: View {
                 ChatScrollSurfaceLocator(engine: scrollEngine)
             }
             .padding(.horizontal, 18)
-            .padding(.top, 18)
+            .padding(.top, max(18, chatCardsHeight + 10))
             .background {
                 GeometryReader { _ in
                     Color.clear.preference(
@@ -499,6 +502,8 @@ struct ChatView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .id(transcriptScrollID)
+        // The plan card, under the pinned replies.
+        .overlay(alignment: .top) { chatCards }
         // The open chat's pinned replies (#918), over the transcript's top.
         .safeAreaInset(edge: .top, spacing: 0) { pinnedReplyBar }
         .modifier(V2SoftTopScrollEdge(isOn: composerFloats))
@@ -523,9 +528,26 @@ struct ChatView: View {
         }
     }
 
+    /// The open chat's plan card (ChatCards.swift).
+    @ViewBuilder
+    private var chatCards: some View {
+        if appState.showsChatCards {
+            ChatCardsOverlay(cards: appState.chatCards) { height in
+                guard abs(height - chatCardsHeight) > 0.5 else { return }
+                withAnimation(ConduitMotion.ease(reduceMotion: composerReduceMotion)) {
+                    chatCardsHeight = height
+                }
+            }
+            .onDisappear { chatCardsHeight = 0 }
+        }
+    }
+
     private func lifecycleObservers(proxy: ScrollViewProxy, content: some View) -> some View {
         content
+            .onChange(of: appState.chatTranscriptRevision) { appState.refreshChatCards() }
+            .onChange(of: appState.activeSessionId) { appState.refreshChatCards() }
             .onAppear {
+                appState.refreshChatCards()
                 installScrollEngineCallbacks(proxy: proxy)
                 scrollEngine.setPaused(scenePhase == .background)
                 scrollEngine.renderedSessionChanged(
