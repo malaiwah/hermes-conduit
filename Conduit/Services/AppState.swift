@@ -13088,11 +13088,12 @@ final class AppState: ObservableObject {
 
     /// Cold-start restore of the saved connection. Its ticket was spent when
     /// it last opened the socket, so the dashboard bridge mints a fresh one
-    /// first; the saved record is only the fallback when that mint fails,
-    /// and its refusal then schedules the reconnect. A failed mint never
-    /// sends the user to login: requiring a freshly restored WebKit cookie
-    /// before every launch was what turned a healthy saved Hermes session
-    /// into login.
+    /// first; the saved record is only the fallback when that mint fails.
+    /// A failed mint alone never sends the user to login (requiring a freshly
+    /// restored WebKit cookie before every launch was what turned a healthy
+    /// saved Hermes session into login), but the fallback handshake can still
+    /// be refused: `stopRecoveryForRefusedSocket` then stops recovery at the
+    /// sign-in screen, while any other connect failure schedules a reconnect.
     private func restoreSavedConnection(_ saved: HermesConnection, switchGeneration: UInt64? = nil, widgetLease: WidgetLaunchLease? = nil) async {
         guard widgetLease?.isCurrent != false else { return }
         if let switchGeneration, !switchGenerationIsCurrent(switchGeneration) {
@@ -13108,8 +13109,9 @@ final class AppState: ObservableObject {
         // The saved ticket was spent when it last opened the socket (Hermes'
         // tickets are single-use and last 30 seconds), so a fresh one is
         // minted with the dashboard's cookies first, as the OAuth restore
-        // does. A mint that fails leaves the saved record: its refusal
-        // schedules the reconnect, as before.
+        // does. A mint that fails leaves the saved record, which `connect`
+        // handles like any other: a refused handshake goes to sign-in, any
+        // other failure schedules a reconnect.
         var connection = saved
         if let ticket = try? await mintChatResumeTicket(for: saved) {
             connection = HermesConnection(baseUrl: saved.baseUrl, ticket: ticket)
@@ -34990,6 +34992,7 @@ enum KeychainHelper {
     private static let customHeadersKey = "hermes-conduit.custom-headers.v1"
     private static let healthSyncKeyAccount = "hermes-conduit.health-sync-key.v1"
     private static let phoneSyncKeyAccount = "hermes-conduit.phone-sync-key.v1"
+    private static let shortcutInboxKeyAccount = "hermes-conduit.shortcut-inbox-key.v1"
     private static let service = "com.milim.conduit"
 
     static func saveConnection(_ conn: HermesConnection) {
@@ -35137,6 +35140,21 @@ enum KeychainHelper {
 
     static func clearPhoneSyncKey() {
         delete(account: phoneSyncKeyAccount)
+    }
+
+    /// The key this phone agreed with the profile its Log to Hermes
+    /// Shortcuts action posts to. Readable after first unlock, as above:
+    /// automations run while the phone is locked.
+    static func saveShortcutInboxKey(_ data: Data) {
+        save(data, account: shortcutInboxKeyAccount)
+    }
+
+    static func loadShortcutInboxKey() -> Data? {
+        load(account: shortcutInboxKeyAccount)
+    }
+
+    static func clearShortcutInboxKey() {
+        delete(account: shortcutInboxKeyAccount)
     }
 
     // MARK: Dashboard registry (multi-server, #148)

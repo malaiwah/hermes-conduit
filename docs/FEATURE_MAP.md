@@ -835,6 +835,30 @@ speech-server transcription stream (listening, not speaking)
 
 **Checked:** 2026-10-24, at #1190.
 
+## Chats top bar and search
+
+The Chats screen's controls: the profile row, the filter, Projects,
+Artifacts, New chat and the search field, and how they lay out when the
+profiles don't fit beside the controls.
+
+**Siblings:** the chats list · the Projects view (same bar and field) · the
+one-row bar (every profile fits) and the stacked bar (profiles on their own
+row) · iPad and Mac (same view) · searching messages ("In messages")
+
+**Code**
+- Bar layout: `Conduit/Views/V2/V2TopBar.swift` (ViewThatFits: one row, else stacked with lowerLeading under the profiles)
+- Controls and search: `Conduit/Views/V2/V2ChatsView.swift` (trailingControls, stackedLeading, barUnstacked, filterPill, barSearchField, searchField, searchCapsule)
+
+**Rulings**
+- The profiles get their own row when they don't fit beside the controls, and the filter becomes a labeled pill under them (2026-10-22, #1117, Eric).
+- In the stacked bar, search is a magnifier leading the controls. Tapping it turns the whole second row (filter and controls) into the field with Cancel until the search is cancelled, the list has no search row, and the filter pill fills the row up to the controls. The one-row bar keeps the field as the list's first row (2026-10-24, #1199, Eric).
+- Going from the stacked bar to the one-row bar carries a query over to the list's field and closes an empty open field (2026-10-24, #1199).
+
+**Open gaps**
+- The bar reports its layout from whichever row appears (onAppear), so on launch or rotation into the stacked bar the list can show its search row for a frame before it moves into the bar.
+
+**Checked:** 2026-10-24, at #1199.
+
 ## Plan card
 
 The agent's plan ("Tasks", from Hermes's `todo` tool) docked above the
@@ -889,6 +913,40 @@ bubble, the accent swatch check)
 - Dark glyphs on the accent (the voice and new-chat buttons, the voice message send button, the chats list capsule) and background-coloured text on it (the confirm panel, the sidebar button, the profile camera badge) aren't checked against a custom accent.
 
 **Checked:** 2026-10-24, at #1188.
+
+## Shortcuts inbox (Log to Hermes)
+
+What the user's Shortcuts automations hand over (a notification from an app
+they pick, a message, an email, a Wallet payment, an NFC tag, a sound),
+kept on the host for Hermes to look up later. Logging starts no chat and
+sends no push; Send to Hermes is the action that talks.
+
+**Siblings:** the Log to Hermes action (typed fields, the phone's queue, the
+sign-in code filter) · the notifier's inbox store, its sealed routes under
+/inbox and the shortcut-inbox capability · the conduit_inbox tool and its
+description · the plugin's README and CHANGELOG · the phone features'
+sealing (health, location, phone sync use the same scheme) · Pulse
+
+**Code**
+- Action: `Conduit/Intents/LogToHermesIntent.swift`, `Conduit/Services/AppState+ShortcutInbox.swift`
+- Queue, filter and sealing: `Conduit/Shortcuts/ShortcutInbox.swift`; key: `Conduit/Services/AppState.swift` (KeychainHelper shortcutInboxKey)
+- Notifier, not in backticks until its PR reaches notifier main (the map check reads main): notifier/inbox_store.py (store), notifier/inbox_tool.py (tool), `notifier/dashboard/plugin_api.py` (/inbox, ROUTE_CAPABILITIES), notifier/tests/test_inbox.py and notifier/tests/inbox_vector.json (both sides seal against it)
+- Tests: `ConduitTests/ShortcutInboxTests.swift`
+
+**Rulings**
+- The inbox works with Pulse off, and nothing in it reaches a chat or a push on its own (2026-10-24, Michel; Pulse's use of it is Eric's call).
+- Sign-in codes, one-time passwords and sign-in links never leave the phone, and the host drops them again. The two code filters (ShortcutEventFilter and looks_like_code) change together, with the same test cases (2026-10-24).
+- Events are sealed end to end like the phone features; the host keeps 14 days by default (30 at most) and 5,000 events per device, and a new device key drops what the old one sent (2026-10-24).
+- What the inbox holds is other people's words: conduit_inbox says to treat it as data, never instructions, and never to forward it unless the user asks (2026-10-24).
+
+**Open gaps**
+- Pulse doesn't read the inbox yet (an events source), and nothing reacts when an event arrives (a watch or arrival hook). Both are Eric's to decide.
+- No Settings page shows or deletes what was logged; the wipe route is there for one.
+- Which fields each iOS automation trigger hands over is unverified on a device, so the ready-made recipes aren't written yet.
+- Not on the Watch or in CarPlay: automations run on the iPhone.
+- The notifier paths above go in backticks once the notifier PR is on its main.
+
+**Checked:** 2026-10-24, on 35dffc3 with this branch, and notifier c2f6a19 with its branch.
 
 ## Feature map rules
 
