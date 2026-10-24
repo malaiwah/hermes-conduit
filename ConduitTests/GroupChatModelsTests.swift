@@ -527,6 +527,45 @@ final class GroupChatModelsTests: XCTestCase {
         XCTAssertEqual(replay.sinceSeq, 500)
     }
 
+    func testPollingTrimsTheReplayBackToTheTailWindow() {
+        // A busy open room: polling past the retained limit drops the
+        // oldest events back to the tail window, and the cursor still
+        // refuses anything already seen.
+        var replay = GroupRoomReplay(roomID: "room-1")
+        let limit = GroupRoomReplay.retainedLimit
+        replay.adopt(page: logPage((1...limit).map { seq in
+            eventJSON(seq: seq, kind: "message.user", payload: ["text": "m\(seq)"])
+        }))
+        XCTAssertEqual(replay.events.count, limit)
+
+        replay.adopt(page: logPage([
+            eventJSON(seq: limit + 1, kind: "message.user", payload: ["text": "new"]),
+        ]))
+        XCTAssertEqual(replay.events.count, GroupRoomReplay.tailWindow)
+        XCTAssertEqual(replay.events.last?.seq, limit + 1)
+        XCTAssertEqual(replay.events.first?.seq, limit + 2 - GroupRoomReplay.tailWindow)
+        XCTAssertEqual(replay.cursor, limit + 1)
+
+        replay.adopt(page: logPage([
+            eventJSON(seq: 1, kind: "message.user", payload: ["text": "old"]),
+        ]))
+        XCTAssertEqual(replay.events.count, GroupRoomReplay.tailWindow)
+        XCTAssertEqual(replay.hasGap, false)
+    }
+
+    func testRoomTranscriptLeavesFollowingOnlyByTheUsersScroll() {
+        // New rows push the bottom away without the user: still following.
+        XCTAssertTrue(GroupRoomFollow.following(current: true, userScrolling: false, distanceFromBottom: 900))
+        // The user scrolls up: browsing, and new rows don't bring it back.
+        XCTAssertFalse(GroupRoomFollow.following(current: true, userScrolling: true, distanceFromBottom: 300))
+        XCTAssertFalse(GroupRoomFollow.following(current: false, userScrolling: false, distanceFromBottom: 900))
+        // A shrink that lands the reader at the bottom follows again.
+        XCTAssertTrue(GroupRoomFollow.following(current: false, userScrolling: false, distanceFromBottom: 0))
+        // The user scrolls back near the bottom: following again.
+        XCTAssertTrue(GroupRoomFollow.following(
+            current: false, userScrolling: true, distanceFromBottom: GroupRoomFollow.nearBottomTolerance))
+    }
+
     func testSendResultAdoptionAdvancesCursorExactlyOnce() {
         // The accepted `groups.send` event rides the same engine: the poll
         // that later returns it must not duplicate it.

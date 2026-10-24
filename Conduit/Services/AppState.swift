@@ -10532,7 +10532,7 @@ final class AppState: ObservableObject {
             // history (upstream keeps 200 — GROUP_CHAT_HISTORY_LIMIT). The
             // window never exceeds the gateway's advertised page limit, so
             // the since_seq and the page limit always agree.
-            let window = min(200, groupCapabilities?.maxLogLimit ?? 500)
+            let window = min(GroupRoomReplay.tailWindow, groupCapabilities?.maxLogLimit ?? 500)
             let (state, driver) = try await groupsState(client, roomID: room.roomID)
             guard groupRoomEpoch == epoch else { return }
             if state.isDisbanded {
@@ -10804,7 +10804,7 @@ final class AppState: ObservableObject {
             activeRoomSurface = GroupRoomSurface(dashboardID: surface.dashboardID, room: state)
             activeRoomDriverStatus = driver
             var fresh = GroupRoomReplay(roomID: state.roomID)
-            let window = min(200, groupCapabilities?.maxLogLimit ?? 500)
+            let window = min(GroupRoomReplay.tailWindow, groupCapabilities?.maxLogLimit ?? 500)
             let start = max(0, (state.latestSeq ?? 0) - window)
             let tail = try await groupsLog(
                 client, roomID: state.roomID, sinceSeq: start, limit: window)
@@ -13031,11 +13031,14 @@ final class AppState: ObservableObject {
         return client
     }
 
-    /// Match the React Native client's recovery order: the securely persisted
-    /// connection is the first cold-start attempt. The dashboard bridge is
-    /// only needed to mint a replacement ticket after that socket actually
-    /// disconnects or fails. Requiring a freshly restored WebKit cookie before
-    /// every launch was what turned a healthy saved Hermes session into login.
+    /// Cold-start restore of the saved connection. Its ticket was spent when
+    /// it last opened the socket, so the dashboard bridge mints a fresh one
+    /// first; the saved record is only the fallback when that mint fails.
+    /// A failed mint alone never sends the user to login (requiring a freshly
+    /// restored WebKit cookie before every launch was what turned a healthy
+    /// saved Hermes session into login), but the fallback handshake can still
+    /// be refused: `stopRecoveryForRefusedSocket` then stops recovery at the
+    /// sign-in screen, while any other connect failure schedules a reconnect.
     private func restoreSavedConnection(_ saved: HermesConnection, switchGeneration: UInt64? = nil, widgetLease: WidgetLaunchLease? = nil) async {
         guard widgetLease?.isCurrent != false else { return }
         if let switchGeneration, !switchGenerationIsCurrent(switchGeneration) {
@@ -13051,8 +13054,9 @@ final class AppState: ObservableObject {
         // The saved ticket was spent when it last opened the socket (Hermes'
         // tickets are single-use and last 30 seconds), so a fresh one is
         // minted with the dashboard's cookies first, as the OAuth restore
-        // does. A mint that fails leaves the saved record: its refusal
-        // schedules the reconnect, as before.
+        // does. A mint that fails leaves the saved record, which `connect`
+        // handles like any other: a refused handshake goes to sign-in, any
+        // other failure schedules a reconnect.
         var connection = saved
         if let ticket = try? await mintChatResumeTicket(for: saved) {
             connection = HermesConnection(baseUrl: saved.baseUrl, ticket: ticket)

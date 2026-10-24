@@ -368,7 +368,18 @@ enum GroupDecoders {
 ///   `groups.state` instead of silently rendering a truncated room.
 /// - Events for a different room are refused outright.
 /// - `replaceAll` is the reconnect resync: authoritative tail rebuild.
+/// - Polling never grows the list past `retainedLimit`: once it does, the
+///   oldest events go, back down to the `tailWindow` an open room fetches.
+///   The cursor is kept separately, so trimming never replays anything.
 struct GroupRoomReplay: Equatable {
+    /// The bounded tail an open or resynced room fetches (upstream keeps
+    /// 200, GROUP_CHAT_HISTORY_LIMIT).
+    static let tailWindow = 200
+    /// Polling trims back to `tailWindow` only after this many, so a reader
+    /// scrolled up sees the oldest rows go once per 200 new events, not on
+    /// every poll.
+    static let retainedLimit = 2 * tailWindow
+
     /// Events accepted so far, ascending by seq. Includes every accepted
     /// kind; presentation filters.
     private(set) var events: [GroupEvent] = []
@@ -433,6 +444,9 @@ struct GroupRoomReplay: Equatable {
             if event.seq > cursor + 1 { hasGap = true }
             events.append(event)
             cursor = event.seq
+        }
+        if events.count > Self.retainedLimit {
+            events.removeFirst(events.count - Self.tailWindow)
         }
         if !page.authorityGatewayID.isEmpty {
             authorityGatewayID = page.authorityGatewayID
