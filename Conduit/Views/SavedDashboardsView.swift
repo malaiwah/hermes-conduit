@@ -185,6 +185,7 @@ struct SavedDashboardRowModel: Identifiable {
 struct SavedDashboardRowLabel: View {
     @ObservedObject var appLanguage = AppLanguageStore.shared
     @EnvironmentObject private var appState: AppState
+    @ObservedObject private var notifications = PushNotificationService.shared
     let row: SavedDashboardRowModel
     let isSwitching: Bool
 
@@ -194,8 +195,18 @@ struct SavedDashboardRowLabel: View {
                 .fill(statusColor)
                 .frame(width: 9, height: 9)
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: row.dashboard.label)
-                    .font(.subheadline.weight(.semibold))
+                HStack(spacing: 4) {
+                    Text(verbatim: row.dashboard.label)
+                        .font(.subheadline.weight(.semibold))
+                    if let quantumSafe = notificationsEncryption {
+                        Image(systemName: quantumSafe ? "lock.shield.fill" : "lock.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel(quantumSafe
+                                ? AppLocalization.string("Notifications end-to-end encrypted and quantum-safe")
+                                : AppLocalization.string("Notifications end-to-end encrypted"))
+                    }
+                }
                 Text(verbatim: row.dashboard.normalizedURL)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -229,6 +240,21 @@ struct SavedDashboardRowLabel: View {
         return row.hasReusableAuth
             ? AppLocalization.string("Saved")
             : AppLocalization.string("Sign In required")
+    }
+
+    /// Nil unless every pairing of this dashboard's hosts is end-to-end
+    /// encrypted with a key the host confirmed; true when every one is also
+    /// quantum-safe (the details are in Settings > Notifications).
+    private var notificationsEncryption: Bool? {
+        guard notifications.isEnabled else { return nil }
+        let gatewayIDs = appState.relayGatewayIDs(of: row.dashboard.id)
+        guard !gatewayIDs.isEmpty else { return nil }
+        var allQuantumSafe = true
+        for gatewayID in gatewayIDs {
+            guard case .ensured(_, _, let quantumSafe) = notifications.encryptionAssurance(gatewayID: gatewayID) else { return nil }
+            allQuantumSafe = allQuantumSafe && quantumSafe
+        }
+        return allQuantumSafe
     }
 
     private var actionText: String {
