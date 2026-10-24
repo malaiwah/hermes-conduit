@@ -2289,6 +2289,26 @@ final class AppState: ObservableObject {
     @Published var slashSubcommands: [String: [String]] = [:]
     @Published var skills: [CapabilitySkill] = []
     @Published var toolsets: [CapabilityToolset] = []
+    /// The active profile's tools catalog, for step rows (`ChatStepLabel`).
+    @Published private(set) var toolCatalog = ToolCatalog()
+    /// One sentence per finished run of steps: by dashboard and profile
+    /// (`toolCatalogKey`), then by the run's first tool call
+    /// (AppState+StepSummaries.swift).
+    @Published var stepSummaries: [String: [String: String]] = ChatStepSummaries.saved()
+    /// Summary questions Hermes accepted, by btw task id, to their run.
+    var stepSummaryTasks: [String: ChatStepSummaries.Run] = [:]
+    /// Summary questions sent whose task id hasn't come back yet.
+    var stepSummaryUnclaimed = 0
+    /// Answers that came before their question's task id did; cleared
+    /// once no question is waiting for its id.
+    var stepSummaryEarlyAnswers: [String: String] = [:]
+    /// Runs asked about and not answered yet, with when they were asked.
+    var stepSummaryRequested: [ChatStepSummaries.Run: Date] = [:]
+    /// Whose catalog `toolCatalog` is (dashboard and profile), and the
+    /// catalogs Hermes already sent this run, or is sending now.
+    private var toolCatalogOwner: String?
+    private var toolCatalogFetched: Set<String> = []
+    private var toolCatalogLoading: Set<String> = []
     /// Profile that owns the currently displayed skills/toolsets. Rows are
     /// only presentable while this equals the active profile.
     @Published private(set) var capabilitiesProfile: String?
@@ -29720,6 +29740,7 @@ final class AppState: ObservableObject {
             let toolsetsValues = toolsetsResponse["_array"] as? [Any] ?? []
             self.toolsets = toolsetsValues.compactMap(decodeCapabilityToolset)
                 .sorted { ($0.label ?? $0.name) < ($1.label ?? $1.name) }
+            adoptToolCatalog(ToolCatalog(toolsets: self.toolsets), key: toolCatalogKey)
             capabilitiesProfile = profile
             return .success(profile: profile)
         } catch {
@@ -29789,6 +29810,48 @@ final class AppState: ObservableObject {
             provenance: dict["provenance"] as? String,
             usage: dict["usage"] as? Int
         )
+    }
+
+    // MARK: - Tools catalog for step rows
+
+    /// The active dashboard and profile, for what is kept per profile on
+    /// this device (the tools catalog, step summaries).
+    var toolCatalogKey: String {
+        "\(Self.dashboardPreferenceBucket(activeDashboardID)).\(activeProfile)"
+    }
+
+    /// Shows the profile's saved catalog at once, then asks Hermes for the
+    /// current one, once per profile while Conduit runs (Capabilities
+    /// refreshes it too). A failed read is tried again on the next chat.
+    func loadToolCatalogIfNeeded() async {
+        let key = toolCatalogKey
+        if toolCatalogOwner != key {
+            toolCatalogOwner = key
+            toolCatalog = ToolCatalog.saved(key: key, defaults: defaults)
+        }
+        guard !toolCatalogFetched.contains(key), !toolCatalogLoading.contains(key),
+              let dashboardTicketBridge else { return }
+        // Two chats opened in a row ask once.
+        toolCatalogLoading.insert(key)
+        defer { toolCatalogLoading.remove(key) }
+        let path = dashboardPath("/api/tools/toolsets", profile: activeProfile)
+        guard let response = try? await dashboardTicketBridge.requestJSON(path: path) else { return }
+        let toolsets = (response["_array"] as? [Any] ?? []).compactMap(decodeCapabilityToolset)
+        adoptToolCatalog(ToolCatalog(toolsets: toolsets), key: key)
+    }
+
+    /// An empty catalog (a Hermes still loading its plugins, or one that
+    /// answered nothing) neither replaces the saved one nor ends the
+    /// retries: the next chat asks again.
+    private func adoptToolCatalog(_ catalog: ToolCatalog, key: String) {
+        guard !catalog.isEmpty else { return }
+        toolCatalogFetched.insert(key)
+        if catalog != ToolCatalog.saved(key: key, defaults: defaults) {
+            catalog.save(key: key, defaults: defaults)
+        }
+        guard key == toolCatalogKey else { return }
+        toolCatalogOwner = key
+        if toolCatalog != catalog { toolCatalog = catalog }
     }
 
     private func decodeCapabilityToolset(_ value: Any) -> CapabilityToolset? {
@@ -30772,6 +30835,8 @@ final class AppState: ObservableObject {
     // MARK: - Stream event handling
 
     func handleStreamEvent(_ event: StreamEvent) {
+        // A step summary's answer is never a /btw reply, in any chat.
+        if takeStepSummaryAnswer(event) { return }
         // Voice background jobs are not the active conversation, so they
         // observe every event before the active-session filter below.
         voiceBackgroundJobSupervisor.observe(event)
@@ -31168,6 +31233,7 @@ final class AppState: ObservableObject {
                 alreadyShown: alreadyShown
             )
             notifyVoiceAssistant(.completed(sessionID: streamSessionId, content: content))
+            requestStepSummaryIfWanted(sessionId: streamSessionId)
 
         case .messageReaction(_, let rowId, let reactions, let role):
             applyAgentReaction(rowId: rowId, reactions: reactions, role: role)
