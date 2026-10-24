@@ -543,11 +543,15 @@ private struct ArtifactsList: View {
         generation &+= 1
         let ticket = generation
         if !key.showsRows(of: loadedKey) {
-            // Another server's list isn't shown, even dimmed, under this one.
+            // Another server's list isn't shown, even dimmed, under this one,
+            // nor a file of it still opening.
             items = []
             nextBefore = nil
             failure = nil
             loadedKey = nil
+            openTask?.cancel()
+            openTask = nil
+            openingID = nil
         }
         isLoading = true
         defer { if ticket == generation { isLoading = false } }
