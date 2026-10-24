@@ -30552,7 +30552,7 @@ final class AppState: ObservableObject {
         switch event {
         case .messageStart(let id):
             sessionId = id
-        case .messageDelta(let id, _), .reasoningDelta(let id, _):
+        case .messageDelta(let id, _), .reasoningDelta(let id, _), .messageInterim(let id, _, _):
             sessionId = id
         case .messageComplete(let id, _, _, _, _):
             sessionId = id
