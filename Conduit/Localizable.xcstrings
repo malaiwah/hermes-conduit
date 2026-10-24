@@ -40927,88 +40927,6 @@
         }
       }
     },
-    "Talk with Gemini Live instead of the Hermes speech pipeline. Hermes still does the work: Gemini starts background jobs on this profile and tells you their results. The API key stays on your Hermes server. Approvals are never given by voice." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sprich mit Gemini Live statt über die Sprachverarbeitung von Hermes. Hermes erledigt weiterhin die Arbeit: Gemini startet Hintergrundjobs in diesem Profil und teilt dir ihre Ergebnisse mit. Der API-Schlüssel bleibt auf deinem Hermes-Server. Freigaben werden nie per Sprache erteilt."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Habla con Gemini Live en lugar de con el sistema de voz de Hermes. Hermes sigue haciendo el trabajo: Gemini inicia trabajos en segundo plano en este perfil y te cuenta sus resultados. La clave de API se queda en tu servidor Hermes. Las aprobaciones nunca se dan por voz."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Parlez avec Gemini Live au lieu du pipeline vocal d'Hermes. Hermes fait toujours le travail : Gemini lance des jobs en arrière-plan sur ce profil et vous donne leurs résultats. La clé API reste sur votre serveur Hermes. Les approbations ne sont jamais données à la voix."
-          }
-        },
-        "id" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Berbicara dengan Gemini Live, bukan pemrosesan ucapan Hermes. Pekerjaannya tetap dilakukan Hermes: Gemini memulai pekerjaan latar di profil ini dan memberi tahu Anda hasilnya. Kunci API tetap di server Hermes Anda. Persetujuan tidak pernah diberikan lewat suara."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Parla con Gemini Live invece che con l'elaborazione vocale di Hermes. Il lavoro lo fa sempre Hermes: Gemini avvia job in background su questo profilo e ti comunica i risultati. La chiave API resta sul tuo server Hermes. Le approvazioni non vengono mai date a voce."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hermesの音声パイプラインの代わりにGemini Liveで会話します。作業は引き続きHermesが行い、Geminiはこのプロファイルでバックグラウンドジョブを開始してその結果を伝えます。APIキーはHermesサーバに保管されたままです。音声で承認が行われることはありません。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hermes 음성 처리 대신 Gemini Live로 대화해요. 작업은 여전히 Hermes가 해요. Gemini가 이 프로필에서 백그라운드 작업을 시작하고 그 결과를 알려 줘요. API 키는 Hermes 서버에 그대로 있어요. 승인은 절대 음성으로 하지 않아요."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rozmawiaj z Gemini Live zamiast korzystać z przetwarzania mowy Hermesa. Pracę nadal wykonuje Hermes: Gemini uruchamia zlecenia w tle w tym profilu i przekazuje Ci ich wyniki. Klucz API pozostaje na Twoim serwerze Hermes. Zatwierdzenia nigdy nie są udzielane głosem."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Converse com o Gemini Live em vez de usar o fluxo de fala do Hermes. O Hermes continua fazendo o trabalho: o Gemini inicia trabalhos em segundo plano neste perfil e conta os resultados para você. A chave de API fica no seu servidor Hermes. Aprovações nunca são dadas por voz."
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Говорите с Gemini Live вместо конвейера речи Hermes. Работу по-прежнему выполняет Hermes: Gemini запускает фоновые задания в этом профиле и сообщает вам их результаты. Ключ API остаётся на вашем сервере Hermes. Разрешения голосом никогда не даются."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hermes konuşma işleme hattı yerine Gemini Live ile konuşun. İşi yine Hermes yapar: Gemini bu profilde arka plan işleri başlatır ve size sonuçlarını söyler. API anahtarı Hermes sunucunuzda kalır. Onaylar asla sesle verilmez."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用 Gemini Live 进行语音对话，替代 Hermes 的语音流程。工作仍由 Hermes 完成：Gemini 会在此配置中启动后台任务并告诉你结果。API 密钥保存在你的 Hermes 服务器上。审批永远不会通过语音进行。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "改用 Gemini Live 進行語音，而不是 Hermes 的語音處理流程。實際工作仍由 Hermes 完成：Gemini 會在此設定檔上開始背景工作並告訴你結果。API 金鑰會保留在你的 Hermes 伺服器上。絕不會透過語音給予核准。"
-          }
-        }
-      }
-    },
     "Try again" : {
       "localizations" : {
         "de" : {
@@ -138050,6 +137968,88 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "捲動至對話中等待回答的問題"
+          }
+        }
+      }
+    },
+    "Search" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suchen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cari"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerca"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "検索"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "검색"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szukaj"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поиск"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ara"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜尋"
           }
         }
       }
@@ -333294,6 +333294,1400 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已建立 %@，即 %@ 的完整副本，但未複製其圖片。"
+          }
+        }
+      }
+    },
+    "Talk with Gemini Live instead of the Hermes speech pipeline. Hermes still does the work: Gemini starts background jobs on this profile and tells you their results. The API key stays on your Hermes server. Gemini answers what Hermes asks you only with what you say, and approves a command only on your yes." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sprich mit Gemini Live statt über die Sprachverarbeitung von Hermes. Hermes erledigt weiterhin die Arbeit: Gemini startet Hintergrundjobs in diesem Profil und teilt dir ihre Ergebnisse mit. Der API-Schlüssel bleibt auf deinem Hermes-Server. Gemini beantwortet, was Hermes dich fragt, nur mit dem, was du sagst, und gibt einen Befehl nur auf dein Ja frei."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Habla con Gemini Live en lugar de con el sistema de voz de Hermes. Hermes sigue haciendo el trabajo: Gemini inicia trabajos en segundo plano en este perfil y te cuenta sus resultados. La clave de API se queda en tu servidor Hermes. Gemini responde lo que Hermes te pregunta solo con lo que tú dices, y aprueba un comando solo con tu sí."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parlez avec Gemini Live au lieu du pipeline vocal d'Hermes. Hermes fait toujours le travail : Gemini lance des jobs en arrière-plan sur ce profil et vous donne leurs résultats. La clé API reste sur votre serveur Hermes. Gemini ne répond à ce que Hermes vous demande qu'avec ce que vous dites, et n'approuve une commande que sur votre oui."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Berbicara dengan Gemini Live, bukan pemrosesan ucapan Hermes. Pekerjaannya tetap dilakukan Hermes: Gemini memulai pekerjaan latar di profil ini dan memberi tahu Anda hasilnya. Kunci API tetap di server Hermes Anda. Gemini menjawab pertanyaan Hermes hanya dengan apa yang Anda katakan, dan menyetujui perintah hanya jika Anda bilang ya."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parla con Gemini Live invece che con l'elaborazione vocale di Hermes. Il lavoro lo fa sempre Hermes: Gemini avvia job in background su questo profilo e ti comunica i risultati. La chiave API resta sul tuo server Hermes. Gemini risponde a ciò che Hermes ti chiede solo con quello che dici, e approva un comando solo con il tuo sì."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermesの音声パイプラインの代わりにGemini Liveで会話します。作業は引き続きHermesが行い、Geminiはこのプロファイルでバックグラウンドジョブを開始してその結果を伝えます。APIキーはHermesサーバに保管されたままです。GeminiはHermesからの質問にあなたの言葉でのみ答え、コマンドはあなたが「はい」と言ったときだけ承認します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermes 음성 처리 대신 Gemini Live로 대화해요. 작업은 여전히 Hermes가 해요. Gemini가 이 프로필에서 백그라운드 작업을 시작하고 그 결과를 알려 줘요. API 키는 Hermes 서버에 그대로 있어요. Gemini는 Hermes의 질문에 내가 말한 내용으로만 답하고, 명령은 내가 '네'라고 할 때만 승인해요."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rozmawiaj z Gemini Live zamiast korzystać z przetwarzania mowy Hermesa. Pracę nadal wykonuje Hermes: Gemini uruchamia zlecenia w tle w tym profilu i przekazuje Ci ich wyniki. Klucz API pozostaje na Twoim serwerze Hermes. Gemini odpowiada na pytania Hermesa tylko tym, co powiesz, a polecenie zatwierdza tylko po Twoim „tak”."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Converse com o Gemini Live em vez de usar o fluxo de fala do Hermes. O Hermes continua fazendo o trabalho: o Gemini inicia trabalhos em segundo plano neste perfil e conta os resultados para você. A chave de API fica no seu servidor Hermes. O Gemini responde ao que o Hermes pergunta só com o que você diz, e aprova um comando só com o seu sim."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Говорите с Gemini Live вместо конвейера речи Hermes. Работу по-прежнему выполняет Hermes: Gemini запускает фоновые задания в этом профиле и сообщает вам их результаты. Ключ API остаётся на вашем сервере Hermes. Gemini отвечает на вопросы Hermes только вашими словами и разрешает команду только после вашего «да»."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermes konuşma işleme hattı yerine Gemini Live ile konuşun. İşi yine Hermes yapar: Gemini bu profilde arka plan işleri başlatır ve size sonuçlarını söyler. API anahtarı Hermes sunucunuzda kalır. Gemini, Hermes'in sorduklarını yalnızca sizin söylediklerinizle yanıtlar ve bir komutu yalnızca siz evet dediğinizde onaylar."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 Gemini Live 进行语音对话，替代 Hermes 的语音流程。工作仍由 Hermes 完成：Gemini 会在此配置中启动后台任务并告诉你结果。API 密钥保存在你的 Hermes 服务器上。Gemini 只会用你说的话回答 Hermes 的问题，只有在你说“是”时才会批准命令。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "改用 Gemini Live 進行語音，而不是 Hermes 的語音處理流程。實際工作仍由 Hermes 完成：Gemini 會在此設定檔上開始背景工作並告訴你結果。API 金鑰會保留在你的 Hermes 伺服器上。Gemini 只會用你說的話回答 Hermes 的問題，只有在你說「是」時才會核准指令。"
+          }
+        }
+      }
+    },
+    "%@ asks: %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ fragt: %2$@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ pregunta: %2$@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ demande : %2$@"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ bertanya: %2$@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ chiede: %2$@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@からの確認：%2$@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@의 요청: %2$@"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ pyta: %2$@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ pergunta: %2$@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ спрашивает: %2$@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ soruyor: %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 问：%2$@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 問：%2$@"
+          }
+        }
+      }
+    },
+    "Answer in your own words." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antworte in deinen eigenen Worten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Responde con tus propias palabras."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réponds avec tes propres mots."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jawab dengan kata-katamu sendiri."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rispondi con parole tue."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ご自身の言葉で答えてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "직접 말로 답해 주세요."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odpowiedz własnymi słowami."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Responda com suas próprias palavras."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ответьте своими словами."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kendi sözlerinle yanıtla."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请用你自己的话回答。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請用你自己的話回答。"
+          }
+        }
+      }
+    },
+    "Say the number of your choice, or answer in your own words." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sag die Nummer deiner Wahl oder antworte in deinen eigenen Worten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Di el número de tu opción o responde con tus propias palabras."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dis le numéro de ton choix, ou réponds avec tes propres mots."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sebutkan nomor pilihanmu, atau jawab dengan kata-katamu sendiri."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Di' il numero della tua scelta, oppure rispondi con parole tue."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選んだ番号を言うか、ご自身の言葉で答えてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "선택한 번호를 말하거나 직접 말로 답해 주세요."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Powiedz numer swojego wyboru albo odpowiedz własnymi słowami."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diga o número da sua escolha ou responda com suas próprias palavras."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Назовите номер варианта или ответьте своими словами."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seçtiğin numarayı söyle ya da kendi sözlerinle yanıtla."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "说出你选择的编号，或用你自己的话回答。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "說出你選擇的編號，或用你自己的話回答。"
+          }
+        }
+      }
+    },
+    "Hermes is paused in this chat until you answer what it asked, so it can't take another request yet. Answer it first, or ask Hermes to explain more as your answer." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermes pausiert in diesem Chat, bis du beantwortest, was es gefragt hat, und kann noch keine weitere Anfrage annehmen. Antworte zuerst, oder bitte Hermes als Antwort, mehr zu erklären."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermes está en pausa en este chat hasta que respondas lo que preguntó, así que aún no puede aceptar otra solicitud. Responde primero, o pide a Hermes como respuesta que te explique más."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermes est en pause dans ce chat tant que tu n'as pas répondu à sa question, il ne peut donc pas encore prendre une autre demande. Réponds d'abord, ou demande à Hermes d'en expliquer plus en guise de réponse."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermes dijeda di chat ini sampai kamu menjawab pertanyaannya, jadi belum bisa menerima permintaan lain. Jawab dulu, atau minta Hermes menjelaskan lebih lanjut sebagai jawabanmu."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermes è in pausa in questa chat finché non rispondi a ciò che ha chiesto, quindi non può ancora accettare un'altra richiesta. Rispondi prima, oppure chiedi a Hermes di spiegare di più come risposta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermesは質問への回答があるまでこのチャットで一時停止しているため、まだ別のリクエストを受け付けられません。先に回答するか、回答としてHermesにもっと説明するよう頼んでください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermes는 질문에 답할 때까지 이 채팅에서 일시 정지되어 있어 아직 다른 요청을 받을 수 없습니다. 먼저 답하거나, 답으로 Hermes에게 더 설명해 달라고 요청하세요."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermes czeka w tym czacie, aż odpowiesz na jego pytanie, więc nie może jeszcze przyjąć kolejnej prośby. Najpierw odpowiedz albo w odpowiedzi poproś Hermesa o więcej wyjaśnień."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Hermes está pausado neste chat até você responder o que ele perguntou, então ainda não pode aceitar outro pedido. Responda primeiro ou, como resposta, peça ao Hermes para explicar mais."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermes приостановлен в этом чате, пока вы не ответите на его вопрос, поэтому пока не может принять другой запрос. Сначала ответьте или в ответ попросите Hermes объяснить подробнее."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermes, sorduğu soruya yanıt verene kadar bu sohbette duraklatıldı, bu yüzden henüz başka bir istek alamaz. Önce yanıtla ya da yanıt olarak Hermes'ten daha fazla açıklama iste."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermes 在这个聊天中暂停，直到你回答它的问题，所以暂时不能接受其他请求。请先回答，或者把“请 Hermes 再解释一下”作为你的回答。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hermes 在這個聊天中暫停，直到你回答它的問題，所以暫時無法接受其他請求。請先回答，或者把「請 Hermes 再解釋一下」作為你的回答。"
+          }
+        }
+      }
+    },
+    "Hold to talk to answer." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zum Antworten halten und sprechen."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mantén pulsado para hablar y responder."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maintenez pour parler et répondre."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tahan untuk bicara dan menjawab."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tieni premuto per parlare e rispondere."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "押し続けて話し、答えてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "길게 눌러 말해서 답하세요."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Przytrzymaj, aby mówić i odpowiedzieć."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Segure para falar e responder."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Удерживайте, чтобы ответить голосом."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yanıtlamak için basılı tutup konuşun."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按住说话即可回答。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按住說話即可回答。"
+          }
+        }
+      }
+    },
+    "The microphone is paused: answer on the card." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Mikrofon ist pausiert: Antworte auf der Karte."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El micrófono está en pausa: responde en la tarjeta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le micro est en pause : répondez sur la carte."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mikrofon dijeda: jawab di kartu."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il microfono è in pausa: rispondi sulla scheda."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクは一時停止中です。カードで答えてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마이크가 일시 정지되었습니다. 카드에서 답하세요."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mikrofon jest wstrzymany: odpowiedz na karcie."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O microfone está pausado: responda no cartão."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Микрофон на паузе: ответьте на карточке."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mikrofon duraklatıldı: kartta yanıtlayın."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风已暂停：请在卡片上回答。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麥克風已暫停：請在卡片上回答。"
+          }
+        }
+      }
+    },
+    "Go to the approval" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zur Freigabe"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ir a la aprobación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aller à l’approbation"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ke persetujuan"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vai all’approvazione"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "承認へ移動"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "승인으로 이동"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Przejdź do zatwierdzenia"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ir para a aprovação"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "К одобрению"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Onaya git"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前往审批"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前往審批"
+          }
+        }
+      }
+    },
+    "Say the numbers of your choices, you may pick several, or answer in your own words." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sag die Nummern deiner Wahl, du kannst mehrere wählen, oder antworte in deinen eigenen Worten."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Di los números de tus opciones, puedes elegir varias, o responde con tus propias palabras."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dis les numéros de tes choix, tu peux en choisir plusieurs, ou réponds avec tes propres mots."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sebutkan nomor pilihanmu, boleh lebih dari satu, atau jawab dengan kata-katamu sendiri."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Di' i numeri delle tue scelte, puoi sceglierne più di una, oppure rispondi con parole tue."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選んだ番号を言ってください（複数選べます）。ご自身の言葉で答えても構いません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "선택한 번호를 말해 주세요. 여러 개를 골라도 되고, 직접 말로 답해도 됩니다."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Powiedz numery swoich wyborów, możesz wybrać kilka, albo odpowiedz własnymi słowami."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diga os números das suas escolhas, você pode escolher várias, ou responda com suas próprias palavras."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Назовите номера вариантов, можно несколько, или ответьте своими словами."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seçtiğin numaraları söyle, birden fazla seçebilirsin, ya da kendi sözlerinle yanıtla."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "说出你选择的编号，可以选多个，或用你自己的话回答。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "說出你選擇的編號，可以選多個，或用你自己的話回答。"
+          }
+        }
+      }
+    },
+    "Rotate encryption keys" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verschlüsselungsschlüssel erneuern"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renovar claves de cifrado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renouveler les clés de chiffrement"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Perbarui kunci enkripsi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rinnova le chiavi di crittografia"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暗号化キーを更新"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "암호화 키 갱신"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odnów klucze szyfrowania"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renovar chaves de criptografia"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обновить ключи шифрования"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Şifreleme anahtarlarını yenile"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "轮换加密密钥"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "輪換加密金鑰"
+          }
+        }
+      }
+    },
+    "Conduit gives this dashboard's hosts new keys by itself every 30 days. The old keys still open notifications already on their way for 7 days." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conduit gibt den Hosts dieses Dashboards alle 30 Tage von selbst neue Schlüssel. Die alten Schlüssel öffnen bereits unterwegs befindliche Mitteilungen noch 7 Tage lang."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conduit da nuevas claves a los hosts de este panel cada 30 días por sí solo. Las claves antiguas siguen abriendo durante 7 días las notificaciones que ya están en camino."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conduit donne de nouvelles clés aux hôtes de ce tableau de bord tous les 30 jours, de lui-même. Les anciennes clés ouvrent encore pendant 7 jours les notifications déjà en route."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conduit memberi host dasbor ini kunci baru dengan sendirinya setiap 30 hari. Kunci lama masih membuka notifikasi yang sudah dalam perjalanan selama 7 hari."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conduit dà da solo nuove chiavi agli host di questa dashboard ogni 30 giorni. Le vecchie chiavi aprono ancora per 7 giorni le notifiche già in arrivo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conduitはこのダッシュボードのホストに30日ごとに自動で新しいキーを渡します。古いキーは、すでに配信中の通知を7日間引き続き開けます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conduit는 30일마다 이 대시보드의 호스트에 자동으로 새 키를 줍니다. 이전 키는 이미 전송 중인 알림을 7일 동안 계속 열 수 있습니다."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conduit sam co 30 dni daje hostom tego panelu nowe klucze. Stare klucze jeszcze przez 7 dni otwierają powiadomienia, które są już w drodze."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Conduit dá novas chaves aos hosts deste painel a cada 30 dias, sozinho. As chaves antigas ainda abrem por 7 dias as notificações que já estão a caminho."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conduit сам выдаёт хостам этой панели новые ключи каждые 30 дней. Старые ключи ещё 7 дней открывают уведомления, которые уже в пути."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conduit bu panonun ana bilgisayarlarına her 30 günde bir kendiliğinden yeni anahtarlar verir. Eski anahtarlar, yolda olan bildirimleri 7 gün daha açar."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conduit 每 30 天会自动为此仪表板的主机提供新密钥。旧密钥在 7 天内仍可打开已在途中的通知。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conduit 每 30 天會自動為此儀表板的主機提供新金鑰。舊金鑰在 7 天內仍可開啟已在途中的通知。"
+          }
+        }
+      }
+    },
+    "End-to-end encrypted with a key from %@. Only this iPhone can read these notifications; the relay sees when they arrive, not what they say. The key changes every 30 days." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ende-zu-Ende-verschlüsselt mit einem Schlüssel vom %@. Nur dieses iPhone kann diese Mitteilungen lesen; das Relay sieht, wann sie ankommen, nicht, was sie sagen. Der Schlüssel wechselt alle 30 Tage."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cifrado de extremo a extremo con una clave del %@. Solo este iPhone puede leer estas notificaciones; el relé ve cuándo llegan, no lo que dicen. La clave cambia cada 30 días."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiffré de bout en bout avec une clé du %@. Seul cet iPhone peut lire ces notifications ; le relais voit quand elles arrivent, pas ce qu’elles disent. La clé change tous les 30 jours."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terenkripsi end-to-end dengan kunci dari %@. Hanya iPhone ini yang bisa membaca notifikasi ini; relay melihat kapan notifikasi tiba, bukan isinya. Kunci berganti setiap 30 hari."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crittografia end-to-end con una chiave del %@. Solo questo iPhone può leggere queste notifiche; il relay vede quando arrivano, non cosa dicono. La chiave cambia ogni 30 giorni."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@のキーでエンドツーエンド暗号化済み。この通知を読めるのはこのiPhoneだけです。リレーには届いた時刻はわかりますが、内容はわかりません。キーは30日ごとに変わります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@에 만든 키로 종단 간 암호화됨. 이 알림은 이 iPhone만 읽을 수 있습니다. 릴레이는 알림이 도착한 시간만 보고 내용은 보지 못합니다. 키는 30일마다 바뀝니다."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szyfrowanie end-to-end kluczem z %@. Tylko ten iPhone może czytać te powiadomienia; przekaźnik widzi, kiedy przychodzą, a nie, co zawierają. Klucz zmienia się co 30 dni."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Criptografado de ponta a ponta com uma chave de %@. Só este iPhone pode ler estas notificações; o relay vê quando elas chegam, não o que dizem. A chave muda a cada 30 dias."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сквозное шифрование ключом от %@. Только этот iPhone может читать эти уведомления; ретранслятор видит, когда они приходят, но не их содержание. Ключ меняется каждые 30 дней."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ tarihli bir anahtarla uçtan uca şifreli. Bu bildirimleri yalnızca bu iPhone okuyabilir; aktarıcı ne zaman geldiklerini görür, ne dediklerini görmez. Anahtar her 30 günde bir değişir."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已使用 %@ 的密钥进行端到端加密。只有这台 iPhone 能读取这些通知；中继只能看到通知何时到达，看不到内容。密钥每 30 天更换一次。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已使用 %@ 的金鑰進行端對端加密。只有這支 iPhone 能讀取這些通知；中繼只能看到通知何時送達，看不到內容。金鑰每 30 天更換一次。"
+          }
+        }
+      }
+    },
+    "End-to-end encrypted. Only this iPhone can read these notifications; the relay sees when they arrive, not what they say. Update this host's notifier so the key changes every 30 days." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ende-zu-Ende-verschlüsselt. Nur dieses iPhone kann diese Mitteilungen lesen; das Relay sieht, wann sie ankommen, nicht, was sie sagen. Aktualisiere den Notifier dieses Hosts, damit der Schlüssel alle 30 Tage wechselt."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cifrado de extremo a extremo. Solo este iPhone puede leer estas notificaciones; el relé ve cuándo llegan, no lo que dicen. Actualiza el notificador de este host para que la clave cambie cada 30 días."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiffré de bout en bout. Seul cet iPhone peut lire ces notifications ; le relais voit quand elles arrivent, pas ce qu’elles disent. Mettez à jour le notificateur de cet hôte pour que la clé change tous les 30 jours."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terenkripsi end-to-end. Hanya iPhone ini yang bisa membaca notifikasi ini; relay melihat kapan notifikasi tiba, bukan isinya. Perbarui notifier host ini agar kunci berganti setiap 30 hari."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crittografia end-to-end. Solo questo iPhone può leggere queste notifiche; il relay vede quando arrivano, non cosa dicono. Aggiorna il notifier di questo host perché la chiave cambi ogni 30 giorni."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エンドツーエンド暗号化済み。この通知を読めるのはこのiPhoneだけです。リレーには届いた時刻はわかりますが、内容はわかりません。キーが30日ごとに変わるよう、このホストの通知プラグインをアップデートしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "종단 간 암호화됨. 이 알림은 이 iPhone만 읽을 수 있습니다. 릴레이는 알림이 도착한 시간만 보고 내용은 보지 못합니다. 키가 30일마다 바뀌도록 이 호스트의 알림 플러그인을 업데이트하세요."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szyfrowanie end-to-end. Tylko ten iPhone może czytać te powiadomienia; przekaźnik widzi, kiedy przychodzą, a nie, co zawierają. Zaktualizuj notifier tego hosta, aby klucz zmieniał się co 30 dni."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Criptografado de ponta a ponta. Só este iPhone pode ler estas notificações; o relay vê quando elas chegam, não o que dizem. Atualize o notificador deste host para que a chave mude a cada 30 dias."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сквозное шифрование. Только этот iPhone может читать эти уведомления; ретранслятор видит, когда они приходят, но не их содержание. Обновите notifier этого хоста, чтобы ключ менялся каждые 30 дней."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uçtan uca şifreli. Bu bildirimleri yalnızca bu iPhone okuyabilir; aktarıcı ne zaman geldiklerini görür, ne dediklerini görmez. Anahtarın her 30 günde bir değişmesi için bu ana bilgisayarın bildiricisini güncelleyin."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已端到端加密。只有这台 iPhone 能读取这些通知；中继只能看到通知何时到达，看不到内容。请更新此主机的通知插件，让密钥每 30 天更换一次。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已端對端加密。只有這支 iPhone 能讀取這些通知；中繼只能看到通知何時送達，看不到內容。請更新此主機的通知外掛，讓金鑰每 30 天更換一次。"
+          }
+        }
+      }
+    },
+    "End-to-end encrypted, but the key is overdue for rotation. Open this host's dashboard in Conduit so it can hand over a new one." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ende-zu-Ende-verschlüsselt, aber der Schlüssel hätte längst erneuert werden sollen. Öffne das Dashboard dieses Hosts in Conduit, damit es einen neuen übergeben kann."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cifrado de extremo a extremo, pero la clave debería haberse renovado. Abre el panel de este host en Conduit para que pueda entregar una nueva."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chiffré de bout en bout, mais la clé aurait dû être renouvelée. Ouvrez le tableau de bord de cet hôte dans Conduit pour qu’il puisse en remettre une nouvelle."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terenkripsi end-to-end, tetapi kuncinya sudah lewat waktu untuk diperbarui. Buka dasbor host ini di Conduit agar host bisa menerima kunci baru."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crittografia end-to-end, ma la chiave andava rinnovata da tempo. Apri la dashboard di questo host in Conduit perché possa consegnarne una nuova."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エンドツーエンド暗号化済みですが、キーの更新期限を過ぎています。新しいキーを渡せるよう、Conduitでこのホストのダッシュボードを開いてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "종단 간 암호화되어 있지만 키 갱신 기한이 지났습니다. 새 키를 전달할 수 있도록 Conduit에서 이 호스트의 대시보드를 여세요."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szyfrowanie end-to-end, ale klucz powinien był już zostać odnowiony. Otwórz panel tego hosta w Conduit, aby mógł przekazać nowy."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Criptografado de ponta a ponta, mas a chave já deveria ter sido renovada. Abra o painel deste host no Conduit para que ele possa entregar uma nova."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сквозное шифрование, но ключ давно пора обновить. Откройте панель этого хоста в Conduit, чтобы он мог передать новый."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uçtan uca şifreli, ancak anahtarın yenilenme zamanı çoktan geçti. Yeni bir anahtar verebilmesi için bu ana bilgisayarın panosunu Conduit’te açın."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已端到端加密，但密钥早已过了轮换期限。请在 Conduit 中打开此主机的仪表板，以便它交出新密钥。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已端對端加密，但金鑰早已超過輪換期限。請在 Conduit 中開啟此主機的儀表板，讓它交出新金鑰。"
+          }
+        }
+      }
+    },
+    "This host's encryption key doesn't match this iPhone's, so its notifications show only generic text. Conduit sets up a new key the next time it connects to this dashboard." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der Verschlüsselungsschlüssel dieses Hosts passt nicht zu dem dieses iPhones, daher zeigen seine Mitteilungen nur allgemeinen Text. Conduit richtet beim nächsten Verbinden mit diesem Dashboard einen neuen Schlüssel ein."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clave de cifrado de este host no coincide con la de este iPhone, así que sus notificaciones solo muestran texto genérico. Conduit crea una clave nueva la próxima vez que se conecte a este panel."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La clé de chiffrement de cet hôte ne correspond pas à celle de cet iPhone : ses notifications n’affichent donc qu’un texte générique. Conduit crée une nouvelle clé à sa prochaine connexion à ce tableau de bord."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunci enkripsi host ini tidak cocok dengan kunci iPhone ini, jadi notifikasinya hanya menampilkan teks umum. Conduit menyiapkan kunci baru saat berikutnya terhubung ke dasbor ini."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La chiave di crittografia di questo host non corrisponde a quella di questo iPhone, quindi le sue notifiche mostrano solo testo generico. Conduit imposta una nuova chiave alla prossima connessione a questa dashboard."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このホストの暗号化キーがこのiPhoneのキーと一致しないため、通知には一般的なテキストだけが表示されます。Conduitは次にこのダッシュボードに接続したときに新しいキーを設定します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 호스트의 암호화 키가 이 iPhone의 키와 일치하지 않아 알림에 일반 텍스트만 표시됩니다. Conduit는 다음에 이 대시보드에 연결할 때 새 키를 설정합니다."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Klucz szyfrowania tego hosta nie pasuje do klucza tego iPhone’a, więc jego powiadomienia pokazują tylko ogólny tekst. Conduit ustawi nowy klucz przy następnym połączeniu z tym panelem."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A chave de criptografia deste host não corresponde à deste iPhone, então as notificações dele mostram só texto genérico. O Conduit configura uma nova chave na próxima vez que se conectar a este painel."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ключ шифрования этого хоста не совпадает с ключом этого iPhone, поэтому его уведомления показывают только общий текст. Conduit создаст новый ключ при следующем подключении к этой панели."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu ana bilgisayarın şifreleme anahtarı bu iPhone’unkiyle eşleşmiyor, bu yüzden bildirimleri yalnızca genel metin gösteriyor. Conduit bu panoya bir sonraki bağlanışında yeni bir anahtar kurar."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此主机的加密密钥与这台 iPhone 的不一致，因此它的通知只显示通用文本。Conduit 下次连接此仪表板时会设置新密钥。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此主機的加密金鑰與這支 iPhone 的不一致，因此它的通知只顯示一般文字。Conduit 下次連線到此儀表板時會設定新金鑰。"
+          }
+        }
+      }
+    },
+    "End-to-end encryption is set up on this iPhone. Conduit checks it with the host the next time it connects to this dashboard." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Ende-zu-Ende-Verschlüsselung ist auf diesem iPhone eingerichtet. Conduit prüft sie mit dem Host beim nächsten Verbinden mit diesem Dashboard."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El cifrado de extremo a extremo está configurado en este iPhone. Conduit lo comprueba con el host la próxima vez que se conecte a este panel."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le chiffrement de bout en bout est configuré sur cet iPhone. Conduit le vérifie avec l’hôte à sa prochaine connexion à ce tableau de bord."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enkripsi end-to-end sudah disiapkan di iPhone ini. Conduit memeriksanya dengan host saat berikutnya terhubung ke dasbor ini."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La crittografia end-to-end è configurata su questo iPhone. Conduit la verifica con l’host alla prossima connessione a questa dashboard."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このiPhoneでエンドツーエンド暗号化が設定されています。Conduitは次にこのダッシュボードに接続したときにホストと確認します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 iPhone에 종단 간 암호화가 설정되었습니다. Conduit는 다음에 이 대시보드에 연결할 때 호스트와 확인합니다."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szyfrowanie end-to-end jest skonfigurowane na tym iPhonie. Conduit sprawdzi je z hostem przy następnym połączeniu z tym panelem."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A criptografia de ponta a ponta está configurada neste iPhone. O Conduit a confere com o host na próxima vez que se conectar a este painel."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сквозное шифрование настроено на этом iPhone. Conduit проверит его с хостом при следующем подключении к этой панели."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uçtan uca şifreleme bu iPhone’da kuruldu. Conduit bunu bu panoya bir sonraki bağlanışında ana bilgisayarla doğrular."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 iPhone 上已设置端到端加密。Conduit 下次连接此仪表板时会与主机核对。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這支 iPhone 已設定端對端加密。Conduit 下次連線到此儀表板時會與主機核對。"
+          }
+        }
+      }
+    },
+    "Notifications end-to-end encrypted" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mitteilungen Ende-zu-Ende-verschlüsselt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notificaciones cifradas de extremo a extremo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifications chiffrées de bout en bout"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifikasi terenkripsi end-to-end"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notifiche con crittografia end-to-end"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知はエンドツーエンド暗号化済み"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "알림 종단 간 암호화됨"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Powiadomienia szyfrowane end-to-end"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notificações criptografadas de ponta a ponta"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Уведомления со сквозным шифрованием"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bildirimler uçtan uca şifreli"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知已端到端加密"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通知已端對端加密"
           }
         }
       }
