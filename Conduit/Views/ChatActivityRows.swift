@@ -628,7 +628,11 @@ private struct ChatStepRowBody: View {
         let visible = group.visibleMembers(showReasoning: showReasoning, showTools: showTools)
         if let position = visible.firstIndex(where: { $0.messageID == message.id }) {
             if visible.count < 2 {
-                Self.single(message)
+                if message.role == .tool, explain != nil || summary != nil || lookingBack {
+                    singleExplained
+                } else {
+                    Self.single(message)
+                }
             } else {
                 // Open while the turn is still adding steps, so each one shows
                 // as it happens; one line once it is done.
@@ -673,6 +677,31 @@ private struct ChatStepRowBody: View {
                 }
             }
         }
+    }
+
+    /// A lone tool step: its card, then what Hermes said about it, if it
+    /// was asked (its menu).
+    private var singleExplained: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Self.single(message)
+            if let summary {
+                Text(summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, ChatStepStyle.rowHorizontalPadding)
+            }
+            if lookingBack {
+                ChatStepLookingBack()
+                    .padding(.horizontal, ChatStepStyle.rowHorizontalPadding)
+            }
+        }
+        .chatStepExplainMenu(
+            explain: lookingBack || message.tool?.status == .running ? nil : explain,
+            title: summary == nil ? AppLocalization.string("Explain this step") : AppLocalization.string("Explain again")
+        )
     }
 
     private func toggle(_ group: ChatStepGroup, to expanded: Bool) {
@@ -791,34 +820,13 @@ private struct ChatStepGroupHeader: View {
         }
         .buttonStyle(.plain)
         .accessibilityValue(expanded ? AppLocalization.string("Expanded") : AppLocalization.string("Collapsed"))
-        .contextMenu {
-            if let explain, !lookingBack {
-                Button(action: explain) {
-                    Label(
-                        summary == nil ? AppLocalization.string("Explain these steps") : AppLocalization.string("Explain again"),
-                        systemImage: "text.bubble"
-                    )
-                }
-            }
-        }
-        .accessibilityActions {
-            if let explain, !lookingBack {
-                Button(summary == nil ? AppLocalization.string("Explain these steps") : AppLocalization.string("Explain again"), action: explain)
-            }
-        }
+        .chatStepExplainMenu(
+            explain: lookingBack ? nil : explain,
+            title: summary == nil ? AppLocalization.string("Explain these steps") : AppLocalization.string("Explain again")
+        )
     }
 
-    /// While Hermes looks back on the run, under its count or old summary.
-    private var lookingBackLine: some View {
-        HStack(spacing: 6) {
-            ProgressView()
-                .controlSize(.mini)
-            Text(AppLocalization.string("Hermes is looking back…"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
+    private var lookingBackLine: some View { ChatStepLookingBack() }
 
     private var chevron: some View {
         Image(systemName: "chevron.down")
@@ -881,6 +889,41 @@ private struct ChatStepGroupHeader: View {
                 .accessibilityLabel(title.spoken)
             Spacer(minLength: 8)
             chevron
+        }
+    }
+}
+
+/// While Hermes looks back on a run or step, under its count, its old
+/// summary or the step's card.
+struct ChatStepLookingBack: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.mini)
+            Text(AppLocalization.string("Hermes is looking back…"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+extension View {
+    /// A run's or a single step's menu (touch and hold), and the same
+    /// action for VoiceOver: asks Hermes to explain it.
+    @ViewBuilder
+    func chatStepExplainMenu(explain: (() -> Void)?, title: String) -> some View {
+        if let explain {
+            contextMenu {
+                Button(action: explain) {
+                    Label(title, systemImage: "text.bubble")
+                }
+            }
+            .accessibilityActions {
+                Button(title, action: explain)
+            }
+        } else {
+            self
         }
     }
 }
