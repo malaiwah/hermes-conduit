@@ -20,9 +20,14 @@ extension ChatTypographyTests {
 
         let run = ChatStepSummaries.lastRun(in: [user] + earlier + [note] + last + [reply])
         XCTAssertEqual(run?.map(\.id), last.map(\.id))
-        // Two steps are too few, and steps before the user's message belong
-        // to an earlier turn.
-        XCTAssertNil(ChatStepSummaries.lastRun(in: [user, summaryStep("x1"), summaryStep("x2"), reply]))
+        // Any run that folds (two steps) with a tool call in it; one step,
+        // or thinking alone, isn't described. Steps before the user's
+        // message belong to an earlier turn.
+        XCTAssertEqual(ChatStepSummaries.lastRun(in: [user, summaryStep("x1"), summaryStep("x2"), reply])?.count, 2)
+        XCTAssertNil(ChatStepSummaries.lastRun(in: [user, summaryStep("x1"), reply]))
+        let thinking = ChatMessage(id: "t", role: .reasoning, content: "Hmm", timestamp: "2026-10-24T09:00:10Z")
+        XCTAssertNil(ChatStepSummaries.lastRun(in: [user, thinking, thinking, reply]))
+        XCTAssertEqual(ChatStepSummaries.lastRun(in: [user, thinking, summaryStep("x1"), reply])?.count, 2)
         XCTAssertNil(ChatStepSummaries.lastRun(in: earlier + [user, reply]))
         // A step still running: the turn hasn't settled.
         XCTAssertNil(ChatStepSummaries.lastRun(in: [user, summaryStep("r1"), summaryStep("r2"), summaryStep("r3", running: true)]))

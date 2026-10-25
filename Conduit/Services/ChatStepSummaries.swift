@@ -16,8 +16,9 @@ enum ChatStepSummaries {
     static let preferenceKey = "conduit.describeStepRuns"
     static let defaultEnabled = false
 
-    /// Shorter runs say enough with their icons.
-    static let minimumToolSteps = 3
+    /// A run is described once it folds (two steps or more) and has a
+    /// tool call in it: thinking alone already reads as itself.
+    static let minimumSteps = 2
 
     /// How many sentences the device keeps; the oldest go first.
     static let savedLimit = 500
@@ -44,8 +45,8 @@ enum ChatStepSummaries {
         id.count >= 12 && id.range(of: #":\d+$"#, options: .regularExpression) == nil
     }
 
-    /// The finished turn's last run of steps, when it has enough tool
-    /// calls to describe: the steps closest to the end, after the user's
+    /// The finished turn's last run of steps, when it folds and has a tool
+    /// call to describe: the steps closest to the end, after the user's
     /// last message.
     static func lastRun(in messages: [ChatMessage]) -> [ChatMessage]? {
         var end = messages.endIndex
@@ -61,7 +62,7 @@ enum ChatStepSummaries {
         let tools = run.filter { $0.role == .tool }
         // A step still running means the turn hasn't settled.
         guard !tools.contains(where: { $0.tool?.status == .running }) else { return nil }
-        return tools.count >= minimumToolSteps ? run : nil
+        return run.count >= minimumSteps && !tools.isEmpty ? run : nil
     }
 
     /// The summary's size: about one line on the phone per tool call,
