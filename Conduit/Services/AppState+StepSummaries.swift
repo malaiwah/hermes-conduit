@@ -18,6 +18,7 @@ extension AppState {
         reapStepSummaryQuestions()
         guard ChatStepSummaries.isEnabled(), !sessionId.isEmpty, !isBusy, let client,
               let run = ChatStepSummaries.lastRun(in: messages),
+              run.filter({ $0.role == .tool }).count <= ChatStepSummaries.maxSteps(),
               let toolID = ChatStepSummaries.key(toolIDs: run.map { $0.tool?.id }) else { return }
         let target = ChatStepSummaries.Run(scope: toolCatalogKey, toolID: toolID)
         guard stepSummaries[target.scope]?[toolID] == nil, stepSummaryRequested[target] == nil else { return }

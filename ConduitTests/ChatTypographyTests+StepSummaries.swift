@@ -62,10 +62,11 @@ extension ChatTypographyTests {
         XCTAssertTrue(question.contains("at most 27 words"))
         XCTAssertTrue(question.contains("never the tool names"))
         // About one line on the phone per tool call.
-        XCTAssertEqual(ChatStepSummaries.words(toolCount: 3), 3 * ChatStepSummaries.wordsPerLine)
-        XCTAssertEqual(ChatStepSummaries.words(toolCount: 1), 3 * ChatStepSummaries.wordsPerLine)
-        XCTAssertEqual(ChatStepSummaries.words(toolCount: 5), 5 * ChatStepSummaries.wordsPerLine)
-        XCTAssertEqual(ChatStepSummaries.words(toolCount: 40), ChatStepSummaries.maxLines * ChatStepSummaries.wordsPerLine)
+        // About half a line on the phone per tool call, two lines to four.
+        XCTAssertEqual(ChatStepSummaries.words(toolCount: 1), 18)
+        XCTAssertEqual(ChatStepSummaries.words(toolCount: 5), 23)
+        XCTAssertEqual(ChatStepSummaries.words(toolCount: 8), 36)
+        XCTAssertEqual(ChatStepSummaries.words(toolCount: 40), 36)
         // Any language's and any budget's question is the summary's, never
         // the user's /btw.
         XCTAssertTrue(ChatStepSummaries.isQuestion(question))
@@ -101,13 +102,17 @@ extension ChatTypographyTests {
         XCTAssertFalse(ChatStepSummaries.isQuestion(question.replacingOccurrences(of: "first person", with: "third person")))
         XCTAssertFalse(ChatStepSummaries.isQuestion(ChatStepSummaries.explainHead + ": what did you do?"))
         // Longer than the folded summary, a few lines at least.
-        XCTAssertEqual(ChatStepSummaries.explainWords(toolCount: 1), 40)
-        XCTAssertEqual(ChatStepSummaries.explainWords(toolCount: 6), 6 * ChatStepSummaries.wordsPerLine * 3 / 2)
+        XCTAssertEqual(ChatStepSummaries.explainWords(toolCount: 1), 36)
+        XCTAssertEqual(ChatStepSummaries.explainWords(toolCount: 12), 54)
     }
 
     func testSentencesAreKeptPerProfileAndTheOldestGoFirst() throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "StepSummaryTests-\(UUID().uuidString)"))
         XCTAssertFalse(ChatStepSummaries.isEnabled(defaults))
+        // Longer runs keep their count unless asked; the limit stays in range.
+        XCTAssertEqual(ChatStepSummaries.maxSteps(defaults), 20)
+        defaults.set(500, forKey: ChatStepSummaries.maxStepsKey)
+        XCTAssertEqual(ChatStepSummaries.maxSteps(defaults), 100)
         let home = "dash.default"
         for index in 0...ChatStepSummaries.savedLimit {
             ChatStepSummaries.save("Step \(index)", for: .init(scope: home, toolID: "k\(index)"), defaults: defaults)

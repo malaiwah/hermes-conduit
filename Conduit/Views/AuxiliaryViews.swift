@@ -1862,6 +1862,7 @@ private struct ChatTakeoverSettings: View {
 private struct StepSummarySettings: View {
     @ObservedObject var appLanguage = AppLanguageStore.shared
     @AppStorage(ChatStepSummaries.preferenceKey) private var enabled = ChatStepSummaries.defaultEnabled
+    @AppStorage(ChatStepSummaries.maxStepsKey) private var maxSteps = ChatStepSummaries.defaultMaxSteps
 
     var body: some View {
         ConduitSettingsSection(
@@ -1881,6 +1882,10 @@ private struct StepSummarySettings: View {
             Toggle("Describe finished steps", isOn: $enabled)
                 .tint(.conduitAccent)
                 .accessibilityHint("Summaries are kept on this device.")
+            Stepper(value: $maxSteps, in: ChatStepSummaries.maxStepsRange, step: 5) {
+                Text(AppLocalization.string("Skip runs over \(String(maxSteps)) steps"))
+            }
+            .disabled(!enabled)
         }
     }
 }

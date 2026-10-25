@@ -28,6 +28,17 @@ enum ChatStepSummaries {
         defaults.object(forKey: preferenceKey) as? Bool ?? defaultEnabled
     }
 
+    /// Longer runs aren't summarized on their own (their menu still
+    /// explains them): set in Settings > Chat.
+    static let maxStepsKey = "conduit.stepRunSummaryMaxSteps"
+    static let defaultMaxSteps = 20
+    static let maxStepsRange = 5...100
+
+    static func maxSteps(_ defaults: UserDefaults = .standard) -> Int {
+        let value = defaults.object(forKey: maxStepsKey) as? Int ?? defaultMaxSteps
+        return min(max(value, maxStepsRange.lowerBound), maxStepsRange.upperBound)
+    }
+
     /// How long a question is remembered unanswered.
     static let answerWait: TimeInterval = 120
 
@@ -65,13 +76,12 @@ enum ChatStepSummaries {
         return run.count >= minimumSteps && !tools.isEmpty ? run : nil
     }
 
-    /// The summary's size: about one line on the phone per tool call,
-    /// up to this many lines.
-    static let maxLines = 8
-    /// A short run still gets room for a reason, not just a deed.
-    static let minLines = 3
-    /// Words that fill about one line of the folded run.
+    /// The summary's size: about half a line on the phone per tool call,
+    /// two lines at least and four at most, so a long run doesn't make a
+    /// page of it.
     static let wordsPerLine = 9
+    static let minLines = 2
+    static let maxLines = 4
 
     static let questionHead = "Look back at the tool calls you made just before your last reply"
     private static let questionTail = "Reply with the paragraph only."
@@ -131,15 +141,18 @@ enum ChatStepSummaries {
         return flat.count > limit ? String(flat.prefix(limit)) + "…" : flat
     }
 
-    /// An explanation runs longer than the folded summary: a few more
-    /// words per call, at least a few lines.
+    /// An explanation runs longer than the folded summary: half again,
+    /// four lines at least and eight at most.
     static func explainWords(toolCount: Int) -> Int {
-        max(words(toolCount: toolCount) * 3 / 2, 4 * wordsPerLine)
+        min(max(words(toolCount: toolCount) * 3 / 2, 4 * wordsPerLine), maxExplainWords)
     }
+
+    static let maxExplainWords = 8 * wordsPerLine
 
     /// The word budget for a run of this many tool calls.
     static func words(toolCount: Int) -> Int {
-        min(max(toolCount, minLines), maxLines) * wordsPerLine
+        let half = (toolCount * wordsPerLine + 1) / 2
+        return min(max(half, minLines * wordsPerLine), maxLines * wordsPerLine)
     }
 
     /// Whether a /btw asked exactly this, or a run's explanation, in
@@ -193,7 +206,7 @@ enum ChatStepSummaries {
         }
         let paragraph = parts.joined(separator: " ")
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’«»*").union(.whitespaces))
-        guard !paragraph.isEmpty, paragraph.count <= maxLines * wordsPerLine * 3 / 2 * 12 else { return nil }
+        guard !paragraph.isEmpty, paragraph.count <= maxExplainWords * 16 else { return nil }
         return paragraph
     }
 
