@@ -78,8 +78,12 @@ enum ChatStepSummaries {
     /// arguments and results included, so it can say what it set out to
     /// do and why each step came next. The reply already gives the results.
     static func question(language: String, words: Int) -> String {
-        "\(questionHead). " + questionBody(language: language, words: words)
+        "\(questionHead). \(questionScope) " + questionBody(language: language, words: words)
     }
+
+    /// Without them Hermes tells neighbouring turns' steps too.
+    private static let questionScope = "Only the calls since the user's last message: earlier turns are context, not part of this story."
+    private static let explainScope = "Tell only these listed calls, nothing that came before or after."
 
     private static func questionBody(language: String, words: Int) -> String {
         "In \(language), tell the user, looking back, the train of thought that led you through them: "
@@ -101,7 +105,7 @@ enum ChatStepSummaries {
     /// short digest once the chat's agent is gone), so the question carries
     /// each call's arguments and the start of its result.
     static func explainQuestion(language: String, words: Int, steps: [ToolActivity]) -> String {
-        "\(explainHead):\n" + explainSteps(steps) + "\n" + questionBody(language: language, words: words)
+        "\(explainHead):\n" + explainSteps(steps) + "\n\(explainScope) " + questionBody(language: language, words: words)
     }
 
     /// The calls as the question lists them, trimmed: enough to point at
@@ -148,8 +152,8 @@ enum ChatStepSummaries {
            let words = text.range(of: #"at most \d+ words"#, options: [.regularExpression, .backwards]),
            let count = Int(text[words].dropFirst(8).prefix(while: \.isNumber)) {
             let body = questionBody(language: String(text[lead.upperBound..<tell.lowerBound]), words: count)
-            if text.hasPrefix(questionHead) { return text == "\(questionHead). " + body }
-            if text.hasPrefix(explainHead + ":\n") { return text.hasSuffix("\n" + body) }
+            if text.hasPrefix(questionHead) { return text == "\(questionHead). \(questionScope) " + body }
+            if text.hasPrefix(explainHead + ":\n") { return text.hasSuffix("\n\(explainScope) " + body) }
             return false
         }
         // The question until 2.2.1.

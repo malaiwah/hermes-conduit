@@ -53,6 +53,7 @@ extension ChatTypographyTests {
         XCTAssertTrue(question.hasPrefix(ChatStepSummaries.questionHead))
         XCTAssertTrue(question.contains("In French, tell the user, looking back, the train of thought"))
         XCTAssertTrue(question.contains("not a report of outcomes"))
+        XCTAssertTrue(question.contains("Only the calls since the user's last message"))
         XCTAssertTrue(question.contains("at most 27 words"))
         XCTAssertTrue(question.contains("never the tool names"))
         // About one line on the phone per tool call.
@@ -88,7 +89,7 @@ extension ChatTypographyTests {
         // Each call's arguments and result are trimmed to a line.
         XCTAssertTrue(question.contains(String(repeating: "q", count: 300) + "…\n"))
         XCTAssertFalse(question.contains(String(repeating: "q", count: 301)))
-        XCTAssertTrue(question.contains("\nIn French, tell the user, looking back"))
+        XCTAssertTrue(question.contains("\nTell only these listed calls, nothing that came before or after. In French, tell the user, looking back"))
         XCTAssertTrue(ChatStepSummaries.isQuestion(question))
         XCTAssertFalse(ChatStepSummaries.isQuestion(question.replacingOccurrences(of: "first person", with: "third person")))
         XCTAssertFalse(ChatStepSummaries.isQuestion(ChatStepSummaries.explainHead + ": what did you do?"))
