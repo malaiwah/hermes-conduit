@@ -68,6 +68,8 @@ enum ChatStepSummaries {
     /// The summary's size: about one line on the phone per tool call,
     /// up to this many lines.
     static let maxLines = 8
+    /// A short run still gets room for a reason, not just a deed.
+    static let minLines = 3
     /// Words that fill about one line of the folded run.
     static let wordsPerLine = 9
 
@@ -137,7 +139,7 @@ enum ChatStepSummaries {
 
     /// The word budget for a run of this many tool calls.
     static func words(toolCount: Int) -> Int {
-        min(max(toolCount, 1), maxLines) * wordsPerLine
+        min(max(toolCount, minLines), maxLines) * wordsPerLine
     }
 
     /// Whether a /btw asked exactly this, or a run's explanation, in

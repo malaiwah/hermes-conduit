@@ -63,6 +63,8 @@ extension ChatTypographyTests {
         XCTAssertTrue(question.contains("never the tool names"))
         // About one line on the phone per tool call.
         XCTAssertEqual(ChatStepSummaries.words(toolCount: 3), 3 * ChatStepSummaries.wordsPerLine)
+        XCTAssertEqual(ChatStepSummaries.words(toolCount: 1), 3 * ChatStepSummaries.wordsPerLine)
+        XCTAssertEqual(ChatStepSummaries.words(toolCount: 5), 5 * ChatStepSummaries.wordsPerLine)
         XCTAssertEqual(ChatStepSummaries.words(toolCount: 40), ChatStepSummaries.maxLines * ChatStepSummaries.wordsPerLine)
         // Any language's and any budget's question is the summary's, never
         // the user's /btw.
@@ -99,7 +101,7 @@ extension ChatTypographyTests {
         XCTAssertFalse(ChatStepSummaries.isQuestion(question.replacingOccurrences(of: "first person", with: "third person")))
         XCTAssertFalse(ChatStepSummaries.isQuestion(ChatStepSummaries.explainHead + ": what did you do?"))
         // Longer than the folded summary, a few lines at least.
-        XCTAssertEqual(ChatStepSummaries.explainWords(toolCount: 1), 4 * ChatStepSummaries.wordsPerLine)
+        XCTAssertEqual(ChatStepSummaries.explainWords(toolCount: 1), 40)
         XCTAssertEqual(ChatStepSummaries.explainWords(toolCount: 6), 6 * ChatStepSummaries.wordsPerLine * 3 / 2)
     }
 
