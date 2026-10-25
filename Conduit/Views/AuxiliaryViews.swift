@@ -1857,7 +1857,8 @@ private struct ChatTakeoverSettings: View {
 }
 
 /// Device-only and off by default: a few lines on a finished run of
-/// steps, asked of Hermes with a hidden /btw (ChatStepSummaries).
+/// steps, asked of Hermes with a hidden /btw (ChatStepSummaries). A run's
+/// menu asks for one whatever the switch says.
 private struct StepSummarySettings: View {
     @ObservedObject var appLanguage = AppLanguageStore.shared
     @AppStorage(ChatStepSummaries.preferenceKey) private var enabled = ChatStepSummaries.defaultEnabled
@@ -1872,6 +1873,9 @@ private struct StepSummarySettings: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Text("Each summary is one more short request to your model. It reuses the chat's prompt cache and never changes the chat.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Text("On or off, you can touch and hold any folded steps and choose Explain these steps.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Toggle("Describe finished steps", isOn: $enabled)

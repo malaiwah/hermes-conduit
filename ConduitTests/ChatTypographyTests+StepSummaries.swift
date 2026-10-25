@@ -51,7 +51,8 @@ extension ChatTypographyTests {
     func testTheQuestionAsksForATrainOfThoughtAndIsRecognizable() {
         let question = ChatStepSummaries.question(language: "French", words: 27)
         XCTAssertTrue(question.hasPrefix(ChatStepSummaries.questionHead))
-        XCTAssertTrue(question.contains("In French, tell the user your train of thought"))
+        XCTAssertTrue(question.contains("In French, tell the user, looking back, the train of thought"))
+        XCTAssertTrue(question.contains("not a report of outcomes"))
         XCTAssertTrue(question.contains("at most 27 words"))
         XCTAssertTrue(question.contains("never the tool names"))
         // About one line on the phone per tool call.
@@ -73,6 +74,27 @@ extension ChatTypographyTests {
             + "Reply with the sentence only."
         XCTAssertTrue(ChatStepSummaries.isQuestion(earlier))
         XCTAssertFalse(ChatStepSummaries.isQuestion("Describe in one short sentence what you just did"))
+    }
+
+    func testAnExplanationCarriesTheRunsCallsAndIsRecognizable() {
+        let steps = [
+            ToolActivity(id: "call_a1b2c3d4e5f6", name: "terminal", input: "{\"command\": \"free -h\"}",
+                         output: "Mem:  16Gi\n  used 2Gi", status: .complete),
+            ToolActivity(id: "call_b1b2c3d4e5f6", name: "web_search", input: String(repeating: "q", count: 500),
+                         output: nil, status: .complete),
+        ]
+        let question = ChatStepSummaries.explainQuestion(language: "French", words: 36, steps: steps)
+        XCTAssertTrue(question.hasPrefix(ChatStepSummaries.explainHead + ":\n1. terminal {\"command\": \"free -h\"}\n   → Mem: 16Gi used 2Gi\n2. web_search "))
+        // Each call's arguments and result are trimmed to a line.
+        XCTAssertTrue(question.contains(String(repeating: "q", count: 300) + "…\n"))
+        XCTAssertFalse(question.contains(String(repeating: "q", count: 301)))
+        XCTAssertTrue(question.contains("\nIn French, tell the user, looking back"))
+        XCTAssertTrue(ChatStepSummaries.isQuestion(question))
+        XCTAssertFalse(ChatStepSummaries.isQuestion(question.replacingOccurrences(of: "first person", with: "third person")))
+        XCTAssertFalse(ChatStepSummaries.isQuestion(ChatStepSummaries.explainHead + ": what did you do?"))
+        // Longer than the folded summary, a few lines at least.
+        XCTAssertEqual(ChatStepSummaries.explainWords(toolCount: 1), 4 * ChatStepSummaries.wordsPerLine)
+        XCTAssertEqual(ChatStepSummaries.explainWords(toolCount: 6), 6 * ChatStepSummaries.wordsPerLine * 3 / 2)
     }
 
     func testSentencesAreKeptPerProfileAndTheOldestGoFirst() throws {

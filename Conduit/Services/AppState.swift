@@ -2303,7 +2303,7 @@ final class AppState: ObservableObject {
     /// once no question is waiting for its id.
     var stepSummaryEarlyAnswers: [String: String] = [:]
     /// Runs asked about and not answered yet, with when they were asked.
-    var stepSummaryRequested: [ChatStepSummaries.Run: Date] = [:]
+    @Published var stepSummaryRequested: [ChatStepSummaries.Run: Date] = [:]
     /// Whose catalog `toolCatalog` is (dashboard and profile), and the
     /// catalogs Hermes already sent this run, or is sending now.
     private var toolCatalogOwner: String?

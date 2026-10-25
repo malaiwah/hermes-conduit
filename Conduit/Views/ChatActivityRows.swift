@@ -571,11 +571,11 @@ struct ChatStepRow: View {
     let placement: ChatStepPlacement
     @Environment(\.chatRowState) private var rowState
     @Environment(\.chatRowDisclosure) private var disclosure
-    /// Read here, so switching summaries off hides them at once.
-    @AppStorage(ChatStepSummaries.preferenceKey) private var describeStepRuns = ChatStepSummaries.defaultEnabled
+    @Environment(\.chatRowActions) private var actions
 
     var body: some View {
         let preferences = rowState.displayPreferences
+        let key = placement.group.summaryKey
         if let disclosure {
             ChatStepRowBody(
                 message: message,
@@ -586,7 +586,11 @@ struct ChatStepRow: View {
                 showTools: preferences.showToolProgress,
                 expandToolsByDefault: preferences.expandToolsByDefault,
                 isBusy: rowState.isBusy,
-                summary: describeStepRuns ? placement.group.summaryKey.flatMap { rowState.stepSummaries[$0] } : nil
+                summary: key.flatMap { rowState.stepSummaries[$0] },
+                lookingBack: key.map { rowState.stepSummariesAsked.contains($0) } ?? false,
+                explain: rowState.canExplainStepRuns && key != nil ? { [actions] in
+                    actions.required.explainStepRun(firstMessageID: placement.group.id)
+                } : nil
             )
         } else {
             ChatStepRowBody.single(message)
@@ -603,8 +607,12 @@ private struct ChatStepRowBody: View {
     let showTools: Bool
     let expandToolsByDefault: Bool
     let isBusy: Bool
-    /// The run's sentence, once Hermes wrote one.
+    /// The run's summary, once Hermes wrote one.
     var summary: String?
+    /// Hermes is writing it now.
+    var lookingBack = false
+    /// Asks Hermes to explain the run (its menu), when it can.
+    var explain: (() -> Void)?
 
     @ViewBuilder
     static func single(_ message: ChatMessage, grouped: Bool = false) -> some View {
@@ -636,6 +644,8 @@ private struct ChatStepRowBody: View {
                                 isLive: live,
                                 expanded: true,
                                 summary: summary,
+                                lookingBack: lookingBack,
+                                explain: live ? nil : explain,
                                 toggle: { toggle(group, to: false) }
                             )
                         }
@@ -655,6 +665,8 @@ private struct ChatStepRowBody: View {
                         isLive: live,
                         expanded: false,
                         summary: summary,
+                        lookingBack: lookingBack,
+                        explain: live ? nil : explain,
                         toggle: { toggle(group, to: true) }
                     )
                     .chatStepCard()
@@ -680,6 +692,9 @@ private struct ChatStepGroupHeader: View {
     /// What the run did, a few lines: under its icons folded, under the
     /// count at the top of the card open.
     var summary: String?
+    var lookingBack = false
+    /// Asks Hermes for the summary, or a new one (the run's menu).
+    var explain: (() -> Void)?
     let toggle: () -> Void
     @ObservedObject private var appLanguage = AppLanguageStore.shared
 
@@ -755,10 +770,17 @@ private struct ChatStepGroupHeader: View {
                     VStack(alignment: .leading, spacing: 8) {
                         countLayout(title)
                         summaryText(summary)
+                        if lookingBack { lookingBackLine }
                     }
                     .accessibilityElement(children: .combine)
                 } else if let summary {
                     summaryLayout(summary, title: title)
+                } else if lookingBack {
+                    VStack(alignment: .leading, spacing: 8) {
+                        countLayout(title)
+                        lookingBackLine
+                    }
+                    .accessibilityElement(children: .combine)
                 } else {
                     countLayout(title)
                 }
@@ -769,6 +791,33 @@ private struct ChatStepGroupHeader: View {
         }
         .buttonStyle(.plain)
         .accessibilityValue(expanded ? AppLocalization.string("Expanded") : AppLocalization.string("Collapsed"))
+        .contextMenu {
+            if let explain, !lookingBack {
+                Button(action: explain) {
+                    Label(
+                        summary == nil ? AppLocalization.string("Explain these steps") : AppLocalization.string("Explain again"),
+                        systemImage: "text.bubble"
+                    )
+                }
+            }
+        }
+        .accessibilityActions {
+            if let explain, !lookingBack {
+                Button(summary == nil ? AppLocalization.string("Explain these steps") : AppLocalization.string("Explain again"), action: explain)
+            }
+        }
+    }
+
+    /// While Hermes looks back on the run, under its count or old summary.
+    private var lookingBackLine: some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.mini)
+            Text(AppLocalization.string("Hermes is looking back…"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var chevron: some View {
@@ -797,6 +846,7 @@ private struct ChatStepGroupHeader: View {
                 chevron
             }
             summaryText(summary)
+            if lookingBack { lookingBackLine }
         }
         // Read as one: the summary, then the count and time; the button's
         // own value says folded or open.

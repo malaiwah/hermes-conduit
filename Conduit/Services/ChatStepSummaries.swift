@@ -73,19 +73,61 @@ enum ChatStepSummaries {
     static let questionHead = "Look back at the tool calls you made just before your last reply"
     private static let questionTail = "Reply with the paragraph only."
 
-    /// A retrospective train of thought, not a list of tools: Hermes
-    /// answers from the whole conversation, every call's arguments and
-    /// results included, so it can say what it was after and what turned
-    /// up.
+    /// A retrospective train of thought, not a list of tools or a report
+    /// of results: Hermes answers from the whole conversation, every call's
+    /// arguments and results included, so it can say what it set out to
+    /// do and why each step came next. The reply already gives the results.
     static func question(language: String, words: Int) -> String {
-        "\(questionHead). In \(language), tell the user your train of thought through them, looking back: "
-            + "what you were after, what each step turned up, and what you made of it, ending on the last thing you found, not on your reply. "
-            + "Use the real content (queries, files, commands, numbers, results), never the tool names: "
-            + "not \"I ran the terminal and used search\", but \"I checked the sandbox first: 16 GB of RAM and a fresh start, so…\". "
+        "\(questionHead). " + questionBody(language: language, words: words)
+    }
+
+    private static func questionBody(language: String, words: Int) -> String {
+        "In \(language), tell the user, looking back, the train of thought that led you through them: "
+            + "what you set out to find, why each step came next, and how what you learned changed your course. "
+            + "Tell it as one coherent story of intentions, not a report of outcomes: your reply already gives the results, "
+            + "so mention a result only where it changed what you did next. "
+            + "Name the real things you were after (the question, file, page or command), never the tool names: "
+            + "not \"I ran the terminal and used search\", but \"I first wanted to know whether the sandbox was fresh, so…\". "
             + "One natural, flowing paragraph of at most \(words) words, first person, past tense: "
             + "no list, headings or preamble, and nothing about how many calls there were. "
             + "It labels those steps, folded, in the user's chat app. "
             + questionTail
+    }
+
+    static let explainHead = "Look back at these tool calls you made earlier in this chat"
+
+    /// Asked from a run's menu, for any finished run: Hermes may no longer
+    /// hold an older run (its /btw sees only up to the last reply, or a
+    /// short digest once the chat's agent is gone), so the question carries
+    /// each call's arguments and the start of its result.
+    static func explainQuestion(language: String, words: Int, steps: [ToolActivity]) -> String {
+        "\(explainHead):\n" + explainSteps(steps) + "\n" + questionBody(language: language, words: words)
+    }
+
+    /// The calls as the question lists them, trimmed: enough to point at
+    /// the run and recall it, not to replay it.
+    static func explainSteps(_ steps: [ToolActivity]) -> String {
+        steps.prefix(maxExplainedSteps).enumerated().map { index, step in
+            var line = "\(index + 1). \(step.name)"
+            if let input = trimmed(step.input, to: 300) { line += " \(input)" }
+            if let output = trimmed(step.output, to: 400) { line += "\n   → \(output)" }
+            return line
+        }.joined(separator: "\n")
+    }
+
+    static let maxExplainedSteps = 16
+
+    private static func trimmed(_ text: String?, to limit: Int) -> String? {
+        guard let text else { return nil }
+        let flat = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !flat.isEmpty else { return nil }
+        return flat.count > limit ? String(flat.prefix(limit)) + "…" : flat
+    }
+
+    /// An explanation runs longer than the folded summary: a few more
+    /// words per call, at least a few lines.
+    static func explainWords(toolCount: Int) -> Int {
+        max(words(toolCount: toolCount) * 3 / 2, 4 * wordsPerLine)
     }
 
     /// The word budget for a run of this many tool calls.
@@ -93,17 +135,22 @@ enum ChatStepSummaries {
         min(max(toolCount, 1), maxLines) * wordsPerLine
     }
 
-    /// Whether a /btw asked exactly this, in whichever language and word
-    /// count it names, or the one-sentence question an earlier Conduit
-    /// asked: its answer, late or replayed, or another device's, is never
+    /// Whether a /btw asked exactly this, or a run's explanation, in
+    /// whichever language and word count it names, or the one-sentence
+    /// question an earlier Conduit asked: its answer, late or replayed, or another device's, is never
     /// shown as a note.
     static func isQuestion(_ text: String?) -> Bool {
         guard let text else { return false }
-        if text.hasPrefix(questionHead),
-           let language = text.firstMatch(of: #/\. In (.+?), tell the user/#),
-           let words = text.firstMatch(of: #/paragraph of at most (\d+) words/#),
-           let count = Int(words.1) {
-            return text == question(language: String(language.1), words: count)
+        // From the end: an explanation's listed calls come first and may
+        // say anything.
+        if let tell = text.range(of: ", tell the user, looking back", options: .backwards),
+           let lead = text.range(of: "In ", options: .backwards, range: text.startIndex..<tell.lowerBound),
+           let words = text.range(of: #"at most \d+ words"#, options: [.regularExpression, .backwards]),
+           let count = Int(text[words].dropFirst(8).prefix(while: \.isNumber)) {
+            let body = questionBody(language: String(text[lead.upperBound..<tell.lowerBound]), words: count)
+            if text.hasPrefix(questionHead) { return text == "\(questionHead). " + body }
+            if text.hasPrefix(explainHead + ":\n") { return text.hasSuffix("\n" + body) }
+            return false
         }
         // The question until 2.2.1.
         guard text.hasPrefix("Describe in one short sentence"),
@@ -139,7 +186,7 @@ enum ChatStepSummaries {
         }
         let paragraph = parts.joined(separator: " ")
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’«»*").union(.whitespaces))
-        guard !paragraph.isEmpty, paragraph.count <= maxLines * wordsPerLine * 12 else { return nil }
+        guard !paragraph.isEmpty, paragraph.count <= maxLines * wordsPerLine * 3 / 2 * 12 else { return nil }
         return paragraph
     }
 
