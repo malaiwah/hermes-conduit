@@ -1089,4 +1089,79 @@ final class AppStateReasoningStreamTests: XCTestCase {
         XCTAssertTrue(updatedDashboardPending.isEmpty)
         XCTAssertTrue(updatedBotPending.filter { $0.tool?.status == .running }.isEmpty, "Pending tool side store must be cleaned up when running == false")
     }
+
+    // MARK: - A whole run of steps, as the transcript draws it
+
+    /// The YVR lounges turn (Crash Dummy, 2026-10-25): seven tool calls with
+    /// thinking before most, two pairs in parallel, honcho_conclude last,
+    /// then the reply and the automatic summary's answer. Live, only
+    /// honcho_conclude was left showing; a reload showed all seven. The
+    /// transcript keeps every step, and the scroll targets, updated after
+    /// each event as the chat view does, place them in one run.
+    func testLongRunKeepsEveryStepThroughCompletion() {
+        let state = makeAppState()
+        installActiveSession(state, id: "stored-a")
+        state.messages = [ChatMessage(id: "user-1", role: .user, content: "Find YVR departure terminal lounges", timestamp: "2026-10-25T15:16:26Z")]
+        var cache = ChatMessageScrollTargetCache()
+        func send(_ event: StreamEvent) {
+            state.handleStreamEvent(event)
+            cache.update(for: state.messages)
+        }
+        func call(_ name: String, _ id: String) {
+            send(.toolStart(sessionId: "stored-a", toolName: name, toolInput: "{}", toolID: id))
+        }
+        func done(_ name: String, _ id: String) {
+            send(.toolComplete(sessionId: "stored-a", toolName: name, toolOutput: "ok \(id)", toolID: id))
+        }
+        send(.messageStart(sessionId: "stored-a"))
+        send(.sessionBusy(sessionId: "stored-a", busy: true))
+        send(.reasoningDelta(sessionId: "stored-a", text: "Find the lounges first."))
+        call("crawl4ai_md", "c1"); done("crawl4ai_md", "c1")
+        send(.reasoningDelta(sessionId: "stored-a", text: "Two sources at once."))
+        call("crawl4ai_md", "c2"); call("searxng_search", "c3")
+        done("searxng_search", "c3"); done("crawl4ai_md", "c2")
+        call("execute_code", "c4"); done("execute_code", "c4")
+        send(.reasoningDelta(sessionId: "stored-a", text: "Search twice more."))
+        call("searxng_search", "c5"); call("searxng_search", "c6")
+        done("searxng_search", "c5"); done("searxng_search", "c6")
+        send(.reasoningDelta(sessionId: "stored-a", text: "Save what I learned."))
+        call("honcho_conclude", "c7"); done("honcho_conclude", "c7")
+        send(.messageDelta(sessionId: "stored-a", text: "Here are the lounges."))
+        send(.messageComplete(sessionId: "stored-a", messageId: "assistant-1", content: "Here are the lounges.", reasoning: nil))
+        // Drains the pending completion.
+        send(.messageStart(sessionId: "stored-a"))
+        send(.sessionBusy(sessionId: "stored-a", busy: false))
+        send(.sideAgentComplete(
+            sessionId: "stored-a",
+            kind: .btw,
+            taskId: "btw-1",
+            text: "I looked for the lounges, then saved what I learned.",
+            question: ChatStepSummaries.question(language: "English", words: 36)
+        ))
+
+        let transcript = state.messages.map { "\($0.role.rawValue):\($0.tool?.name ?? $0.content.prefix(24).description)" }
+        let toolIDs = state.messages.compactMap { $0.role == .tool ? $0.tool?.id : nil }
+        XCTAssertEqual(toolIDs, ["c1", "c2", "c3", "c4", "c5", "c6", "c7"], "transcript: \(transcript)")
+
+        let incremental = cache.targets.compactMap(\.step)
+        var fresh = ChatMessageScrollTargetCache()
+        fresh.update(for: state.messages)
+        XCTAssertEqual(incremental, fresh.targets.compactMap(\.step), "transcript: \(transcript)")
+        let groups = Set(incremental.map(\.group.id))
+        XCTAssertEqual(groups.count, 1, "runs: \(incremental.map { ($0.group.id, $0.index) }) transcript: \(transcript)")
+        XCTAssertEqual(incremental.first?.group.members.filter { !$0.isThinking }.count, 7)
+
+        // Collapsed once the turn is done: only the run's first row draws.
+        let disclosure = ChatRowDisclosure()
+        let drawn = cache.targets.filter { target in
+            target.step?.drawsRow(
+                messageID: target.id,
+                preferences: ProfileDisplayPreferences(),
+                isBusy: state.isBusy,
+                disclosure: disclosure
+            ) ?? true
+        }
+        XCTAssertEqual(drawn.filter { $0.step != nil }.count, 1, "drawn: \(drawn.map(\.id))")
+        XCTAssertEqual(drawn.first { $0.step != nil }?.step?.index, 0)
+    }
 }
