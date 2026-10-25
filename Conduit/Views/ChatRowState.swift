@@ -42,8 +42,12 @@ struct ChatRowState: Equatable {
     var botLabels: [String] = []
     /// Names the steps Conduit has no words of its own for.
     var toolCatalog = ToolCatalog()
-    /// Finished runs' sentences, by their first tool call.
+    /// Finished runs' summaries, by their first tool call.
     var stepSummaries: [String: String] = [:]
+    /// Runs Hermes is looking back on now, by their first tool call.
+    var stepSummariesAsked: Set<String> = []
+    /// A run's menu can ask Hermes to explain it.
+    var canExplainStepRuns = false
 
     init() {}
 
@@ -71,8 +75,10 @@ struct ChatRowState: Equatable {
         )
         botLabels = appState.botRoster.map { "\($0.name)=\($0.displayLabel)" }
         toolCatalog = appState.toolCatalog
-        // ChatStepRow hides them while the switch is off.
-        stepSummaries = appState.stepSummaries[appState.toolCatalogKey] ?? [:]
+        let scope = appState.toolCatalogKey
+        stepSummaries = appState.stepSummaries[scope] ?? [:]
+        stepSummariesAsked = Set(appState.stepSummaryRequested.keys.lazy.filter { $0.scope == scope }.map(\.toolID))
+        canExplainStepRuns = appState.client != nil && !(appState.activeSessionId ?? "").isEmpty && !isOffline
     }
 
     /// `AppState.canReact(to:)`, from these values alone.

@@ -564,17 +564,18 @@ enum ChatStepTiming {
 
 /// A thinking or tool row that belongs to a run of steps. Alone it is the
 /// plain step card; with others it draws its slice of the run's card, or
-/// nothing while the run is collapsed (the first row shows the summary).
+/// nothing while the run is collapsed (the first row shows the summary,
+/// which also tops the open card).
 struct ChatStepRow: View {
     let message: ChatMessage
     let placement: ChatStepPlacement
     @Environment(\.chatRowState) private var rowState
     @Environment(\.chatRowDisclosure) private var disclosure
-    /// Read here, so switching summaries off hides them at once.
-    @AppStorage(ChatStepSummaries.preferenceKey) private var describeStepRuns = ChatStepSummaries.defaultEnabled
+    @Environment(\.chatRowActions) private var actions
 
     var body: some View {
         let preferences = rowState.displayPreferences
+        let key = placement.group.summaryKey
         if let disclosure {
             ChatStepRowBody(
                 message: message,
@@ -585,7 +586,11 @@ struct ChatStepRow: View {
                 showTools: preferences.showToolProgress,
                 expandToolsByDefault: preferences.expandToolsByDefault,
                 isBusy: rowState.isBusy,
-                summary: describeStepRuns ? placement.group.summaryKey.flatMap { rowState.stepSummaries[$0] } : nil
+                summary: key.flatMap { rowState.stepSummaries[$0] },
+                lookingBack: key.map { rowState.stepSummariesAsked.contains($0) } ?? false,
+                explain: rowState.canExplainStepRuns && key != nil ? { [actions] in
+                    actions.required.explainStepRun(firstMessageID: placement.group.id)
+                } : nil
             )
         } else {
             ChatStepRowBody.single(message)
@@ -602,8 +607,12 @@ private struct ChatStepRowBody: View {
     let showTools: Bool
     let expandToolsByDefault: Bool
     let isBusy: Bool
-    /// The run's sentence, once Hermes wrote one.
+    /// The run's summary, once Hermes wrote one.
     var summary: String?
+    /// Hermes is writing it now.
+    var lookingBack = false
+    /// Asks Hermes to explain the run (its menu), when it can.
+    var explain: (() -> Void)?
 
     @ViewBuilder
     static func single(_ message: ChatMessage, grouped: Bool = false) -> some View {
@@ -619,7 +628,11 @@ private struct ChatStepRowBody: View {
         let visible = group.visibleMembers(showReasoning: showReasoning, showTools: showTools)
         if let position = visible.firstIndex(where: { $0.messageID == message.id }) {
             if visible.count < 2 {
-                Self.single(message)
+                if message.role == .tool, explain != nil || summary != nil || lookingBack {
+                    singleExplained
+                } else {
+                    Self.single(message)
+                }
             } else {
                 // Open while the turn is still adding steps, so each one shows
                 // as it happens; one line once it is done.
@@ -634,6 +647,9 @@ private struct ChatStepRowBody: View {
                                 members: visible,
                                 isLive: live,
                                 expanded: true,
+                                summary: summary,
+                                lookingBack: lookingBack,
+                                explain: live ? nil : explain,
                                 toggle: { toggle(group, to: false) }
                             )
                         }
@@ -653,12 +669,39 @@ private struct ChatStepRowBody: View {
                         isLive: live,
                         expanded: false,
                         summary: summary,
+                        lookingBack: lookingBack,
+                        explain: live ? nil : explain,
                         toggle: { toggle(group, to: true) }
                     )
                     .chatStepCard()
                 }
             }
         }
+    }
+
+    /// A lone tool step: its card, then what Hermes said about it, if it
+    /// was asked (its menu).
+    private var singleExplained: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Self.single(message)
+            if let summary {
+                Text(summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, ChatStepStyle.rowHorizontalPadding)
+            }
+            if lookingBack {
+                ChatStepLookingBack()
+                    .padding(.horizontal, ChatStepStyle.rowHorizontalPadding)
+            }
+        }
+        .chatStepExplainMenu(
+            explain: lookingBack || message.tool?.status == .running ? nil : explain,
+            title: summary == nil ? AppLocalization.string("Explain this step") : AppLocalization.string("Explain again")
+        )
     }
 
     private func toggle(_ group: ChatStepGroup, to expanded: Bool) {
@@ -675,8 +718,12 @@ private struct ChatStepGroupHeader: View {
     let members: [ChatStepGroupMember]
     let isLive: Bool
     let expanded: Bool
-    /// What the run did, in one sentence: shown folded, over the count.
+    /// What the run did, a few lines: under its icons folded, under the
+    /// count at the top of the card open.
     var summary: String?
+    var lookingBack = false
+    /// Asks Hermes for the summary, or a new one (the run's menu).
+    var explain: (() -> Void)?
     let toggle: () -> Void
     @ObservedObject private var appLanguage = AppLanguageStore.shared
 
@@ -685,18 +732,20 @@ private struct ChatStepGroupHeader: View {
         let tint: Color
     }
 
+    private static func look(_ member: ChatStepGroupMember) -> Look {
+        guard let name = member.toolName else {
+            return Look(symbol: ChatStepStyle.thinking.symbol, tint: ChatStepStyle.thinking.tint)
+        }
+        let style = ChatStepStyle(toolName: name)
+        return Look(symbol: style.symbol, tint: style.tint)
+    }
+
     /// One disc per kind of step, in order of first use.
     private var icons: [Look] {
         var seen = Set<String>()
         var result: [Look] = []
         for member in members {
-            let look: Look
-            if let name = member.toolName {
-                let style = ChatStepStyle(toolName: name)
-                look = Look(symbol: style.symbol, tint: style.tint)
-            } else {
-                look = Look(symbol: ChatStepStyle.thinking.symbol, tint: ChatStepStyle.thinking.tint)
-            }
+            let look = Self.look(member)
             if seen.insert(look.symbol).inserted { result.append(look) }
             if result.count == Self.maxIcons { break }
         }
@@ -704,6 +753,32 @@ private struct ChatStepGroupHeader: View {
     }
 
     private static let maxIcons = 5
+
+    /// Over a summary: one disc per step, in order, as many as fit, then
+    /// an ellipsis.
+    private var stepIcons: some View {
+        let looks = members.prefix(Self.maxStepIcons).map(Self.look)
+        // Each count tried in turn, all of them first when they can all show.
+        let most = min(members.count, Self.maxStepIcons)
+        let fits = (members.count == most ? [most] : []) + Array(stride(from: most - 1, through: 1, by: -1))
+        return ViewThatFits(in: .horizontal) {
+            ForEach(fits, id: \.self) { shown in
+                HStack(spacing: 4) {
+                    ForEach(Array(looks.prefix(shown).enumerated()), id: \.offset) { _, icon in
+                        ChatStepIcon(symbol: icon.symbol, tint: icon.tint, size: 22)
+                    }
+                    if shown < members.count {
+                        Text(verbatim: "…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                    }
+                }
+            }
+        }
+    }
+
+    private static let maxStepIcons = 16
 
     /// The run's count and, once it is done, its time (a running turn's
     /// time is on the working line): shown, then spoken.
@@ -719,42 +794,25 @@ private struct ChatStepGroupHeader: View {
         // Once: it parses every step's time.
         let title = self.title
         Button(action: toggle) {
-            HStack(spacing: ChatStepStyle.iconGap) {
-                if !expanded {
-                    HStack(spacing: 4) {
-                        ForEach(icons, id: \.symbol) { icon in
-                            ChatStepIcon(symbol: icon.symbol, tint: icon.tint, size: 22)
-                        }
+            Group {
+                if let summary, expanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        countLayout(title)
+                        summaryText(summary)
+                        if lookingBack { lookingBackLine }
                     }
-                }
-                if !expanded, let summary {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(summary)
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                        Text(title.shown)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                            .accessibilityLabel(title.spoken)
+                    .accessibilityElement(children: .combine)
+                } else if let summary {
+                    summaryLayout(summary, title: title)
+                } else if lookingBack {
+                    VStack(alignment: .leading, spacing: 8) {
+                        countLayout(title)
+                        lookingBackLine
                     }
-                    // Read as one: the sentence, then the count and time;
-                    // the button's own value says folded or open.
                     .accessibilityElement(children: .combine)
                 } else {
-                    Text(title.shown)
-                        .font(expanded ? .subheadline.weight(.semibold) : .subheadline)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .accessibilityLabel(title.spoken)
+                    countLayout(title)
                 }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.conduitTertiary)
-                    .rotationEffect(.degrees(expanded ? 180 : 0))
-                    .accessibilityHidden(true)
             }
             .padding(.horizontal, ChatStepStyle.rowHorizontalPadding)
             .padding(.vertical, ChatStepStyle.rowVerticalPadding)
@@ -762,6 +820,111 @@ private struct ChatStepGroupHeader: View {
         }
         .buttonStyle(.plain)
         .accessibilityValue(expanded ? AppLocalization.string("Expanded") : AppLocalization.string("Collapsed"))
+        .chatStepExplainMenu(
+            explain: lookingBack ? nil : explain,
+            title: summary == nil ? AppLocalization.string("Explain these steps") : AppLocalization.string("Explain again")
+        )
+    }
+
+    private var lookingBackLine: some View { ChatStepLookingBack() }
+
+    private var chevron: some View {
+        Image(systemName: "chevron.down")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.conduitTertiary)
+            .rotationEffect(.degrees(expanded ? 180 : 0))
+            .accessibilityHidden(true)
+    }
+
+    /// Folded with a summary: every step's icon and the count on top, the
+    /// summary under them at full width, never cut.
+    private func summaryLayout(_ summary: String, title: (shown: String, spoken: String)) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: ChatStepStyle.iconGap) {
+                stepIcons
+                Text(title.shown)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
+                    .layoutPriority(1)
+                    .accessibilityLabel(title.spoken)
+                Spacer(minLength: 8)
+                chevron
+            }
+            summaryText(summary)
+            if lookingBack { lookingBackLine }
+        }
+        // Read as one: the summary, then the count and time; the button's
+        // own value says folded or open.
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The run's summary at full width, never cut: under the icons when
+    /// folded, under the count at the top of the open card.
+    private func summaryText(_ summary: String) -> some View {
+        Text(summary)
+            .font(.subheadline)
+            .foregroundStyle(.primary)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Folded without a summary, or open: the kinds of steps and the count.
+    private func countLayout(_ title: (shown: String, spoken: String)) -> some View {
+        HStack(spacing: ChatStepStyle.iconGap) {
+            if !expanded {
+                HStack(spacing: 4) {
+                    ForEach(icons, id: \.symbol) { icon in
+                        ChatStepIcon(symbol: icon.symbol, tint: icon.tint, size: 22)
+                    }
+                }
+            }
+            Text(title.shown)
+                .font(expanded ? .subheadline.weight(.semibold) : .subheadline)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .accessibilityLabel(title.spoken)
+            Spacer(minLength: 8)
+            chevron
+        }
+    }
+}
+
+/// While Hermes looks back on a run or step, under its count, its old
+/// summary or the step's card.
+struct ChatStepLookingBack: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.mini)
+            Text(AppLocalization.string("Hermes is looking back…"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+extension View {
+    /// A run's or a single step's menu (touch and hold), and the same
+    /// action for VoiceOver: asks Hermes to explain it.
+    @ViewBuilder
+    func chatStepExplainMenu(explain: (() -> Void)?, title: String) -> some View {
+        if let explain {
+            contextMenu {
+                Button(action: explain) {
+                    Label(title, systemImage: "text.bubble")
+                }
+            }
+            .accessibilityActions {
+                Button(title, action: explain)
+            }
+        } else {
+            self
+        }
     }
 }
 

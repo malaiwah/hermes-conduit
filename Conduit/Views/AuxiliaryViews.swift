@@ -1856,11 +1856,13 @@ private struct ChatTakeoverSettings: View {
     }
 }
 
-/// Device-only and off by default: one sentence for a finished run of
-/// steps, asked of Hermes with a hidden /btw (ChatStepSummaries).
+/// Device-only and off by default: a few lines on a finished run of
+/// steps, asked of Hermes with a hidden /btw (ChatStepSummaries). A run's
+/// menu asks for one whatever the switch says.
 private struct StepSummarySettings: View {
     @ObservedObject var appLanguage = AppLanguageStore.shared
     @AppStorage(ChatStepSummaries.preferenceKey) private var enabled = ChatStepSummaries.defaultEnabled
+    @AppStorage(ChatStepSummaries.maxStepsKey) private var maxSteps = ChatStepSummaries.defaultMaxSteps
 
     var body: some View {
         ConduitSettingsSection(
@@ -1868,15 +1870,22 @@ private struct StepSummarySettings: View {
             symbol: "text.line.first.and.arrowtriangle.forward",
             tint: .conduitAura
         ) {
-            Text("When a reply took several steps, Hermes writes one sentence about what they did, shown on the folded steps.")
+            Text("When a reply took several steps, Hermes looks back on them in a few lines: what it looked for and what it found, shown under the folded steps.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            Text("Each sentence is one more short request to your model. It reuses the chat's prompt cache and never changes the chat.")
+            Text("Each summary is one more short request to your model. It reuses the chat's prompt cache and never changes the chat.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Text("On or off, you can touch and hold any folded steps and choose Explain these steps.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Toggle("Describe finished steps", isOn: $enabled)
                 .tint(.conduitAccent)
-                .accessibilityHint("Sentences are kept on this device.")
+                .accessibilityHint("Summaries are kept on this device.")
+            Stepper(value: $maxSteps, in: ChatStepSummaries.maxStepsRange, step: 5) {
+                Text(AppLocalization.string("Skip runs over \(String(maxSteps)) steps"))
+            }
+            .disabled(!enabled)
         }
     }
 }
