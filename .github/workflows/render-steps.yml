@@ -1,0 +1,40 @@
+name: Render step groups
+
+on:
+  push:
+    branches: [render-steps]
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo xcode-select -s /Applications/Xcode.app
+      - run: brew install xcodegen
+      - run: xcodegen generate --spec project.yml
+      - name: Render
+        env:
+          TEST_RUNNER_RENDER_DIR: ${{ github.workspace }}/renders
+        run: |
+          set -o pipefail
+          xcodebuild test -project Conduit.xcodeproj -scheme Conduit \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+            -only-testing:ConduitTests/StepGroupRenderTests \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tail -n 80
+      - name: Publish the PNGs on a branch
+        run: |
+          set -euo pipefail
+          out=$(mktemp -d)
+          cp renders/*.png "$out"/
+          git config user.name "render bot"
+          git config user.email "render@example.invalid"
+          git checkout --orphan render-steps-out
+          git rm -rfq .
+          cp "$out"/*.png .
+          git add ./*.png
+          git commit -qm "Step group renders for ${GITHUB_SHA}"
+          git push -f origin render-steps-out

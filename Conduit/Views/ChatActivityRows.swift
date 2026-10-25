@@ -714,7 +714,7 @@ private struct ChatStepRowBody: View {
 
 /// The run's line: its steps' icons (collapsed), how many and how long,
 /// and the chevron that opens or closes it.
-private struct ChatStepGroupHeader: View {
+struct ChatStepGroupHeader: View {
     let members: [ChatStepGroupMember]
     let isLive: Bool
     let expanded: Bool
