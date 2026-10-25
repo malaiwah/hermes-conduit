@@ -1856,7 +1856,7 @@ private struct ChatTakeoverSettings: View {
     }
 }
 
-/// Device-only and off by default: one sentence for a finished run of
+/// Device-only and off by default: a few lines on a finished run of
 /// steps, asked of Hermes with a hidden /btw (ChatStepSummaries).
 private struct StepSummarySettings: View {
     @ObservedObject var appLanguage = AppLanguageStore.shared
@@ -1868,15 +1868,15 @@ private struct StepSummarySettings: View {
             symbol: "text.line.first.and.arrowtriangle.forward",
             tint: .conduitAura
         ) {
-            Text("When a reply took several steps, Hermes writes one sentence about what they did, shown on the folded steps.")
+            Text("When a reply took several steps, Hermes looks back on them in a few lines: what it looked for and what it found, shown under the folded steps.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            Text("Each sentence is one more short request to your model. It reuses the chat's prompt cache and never changes the chat.")
+            Text("Each summary is one more short request to your model. It reuses the chat's prompt cache and never changes the chat.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             Toggle("Describe finished steps", isOn: $enabled)
                 .tint(.conduitAccent)
-                .accessibilityHint("Sentences are kept on this device.")
+                .accessibilityHint("Summaries are kept on this device.")
         }
     }
 }

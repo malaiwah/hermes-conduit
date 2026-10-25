@@ -564,7 +564,8 @@ enum ChatStepTiming {
 
 /// A thinking or tool row that belongs to a run of steps. Alone it is the
 /// plain step card; with others it draws its slice of the run's card, or
-/// nothing while the run is collapsed (the first row shows the summary).
+/// nothing while the run is collapsed (the first row shows the summary,
+/// which also tops the open card).
 struct ChatStepRow: View {
     let message: ChatMessage
     let placement: ChatStepPlacement
@@ -634,6 +635,7 @@ private struct ChatStepRowBody: View {
                                 members: visible,
                                 isLive: live,
                                 expanded: true,
+                                summary: summary,
                                 toggle: { toggle(group, to: false) }
                             )
                         }
@@ -675,7 +677,8 @@ private struct ChatStepGroupHeader: View {
     let members: [ChatStepGroupMember]
     let isLive: Bool
     let expanded: Bool
-    /// What the run did, in one sentence: shown folded, over the count.
+    /// What the run did, a few lines: under its icons folded, under the
+    /// count at the top of the card open.
     var summary: String?
     let toggle: () -> Void
     @ObservedObject private var appLanguage = AppLanguageStore.shared
@@ -685,18 +688,20 @@ private struct ChatStepGroupHeader: View {
         let tint: Color
     }
 
+    private static func look(_ member: ChatStepGroupMember) -> Look {
+        guard let name = member.toolName else {
+            return Look(symbol: ChatStepStyle.thinking.symbol, tint: ChatStepStyle.thinking.tint)
+        }
+        let style = ChatStepStyle(toolName: name)
+        return Look(symbol: style.symbol, tint: style.tint)
+    }
+
     /// One disc per kind of step, in order of first use.
     private var icons: [Look] {
         var seen = Set<String>()
         var result: [Look] = []
         for member in members {
-            let look: Look
-            if let name = member.toolName {
-                let style = ChatStepStyle(toolName: name)
-                look = Look(symbol: style.symbol, tint: style.tint)
-            } else {
-                look = Look(symbol: ChatStepStyle.thinking.symbol, tint: ChatStepStyle.thinking.tint)
-            }
+            let look = Self.look(member)
             if seen.insert(look.symbol).inserted { result.append(look) }
             if result.count == Self.maxIcons { break }
         }
@@ -704,6 +709,32 @@ private struct ChatStepGroupHeader: View {
     }
 
     private static let maxIcons = 5
+
+    /// Over a summary: one disc per step, in order, as many as fit, then
+    /// an ellipsis.
+    private var stepIcons: some View {
+        let looks = members.prefix(Self.maxStepIcons).map(Self.look)
+        // Each count tried in turn, all of them first when they can all show.
+        let most = min(members.count, Self.maxStepIcons)
+        let fits = (members.count == most ? [most] : []) + Array(stride(from: most - 1, through: 1, by: -1))
+        return ViewThatFits(in: .horizontal) {
+            ForEach(fits, id: \.self) { shown in
+                HStack(spacing: 4) {
+                    ForEach(Array(looks.prefix(shown).enumerated()), id: \.offset) { _, icon in
+                        ChatStepIcon(symbol: icon.symbol, tint: icon.tint, size: 22)
+                    }
+                    if shown < members.count {
+                        Text(verbatim: "…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                    }
+                }
+            }
+        }
+    }
+
+    private static let maxStepIcons = 16
 
     /// The run's count and, once it is done, its time (a running turn's
     /// time is on the working line): shown, then spoken.
@@ -719,42 +750,18 @@ private struct ChatStepGroupHeader: View {
         // Once: it parses every step's time.
         let title = self.title
         Button(action: toggle) {
-            HStack(spacing: ChatStepStyle.iconGap) {
-                if !expanded {
-                    HStack(spacing: 4) {
-                        ForEach(icons, id: \.symbol) { icon in
-                            ChatStepIcon(symbol: icon.symbol, tint: icon.tint, size: 22)
-                        }
+            Group {
+                if let summary, expanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        countLayout(title)
+                        summaryText(summary)
                     }
-                }
-                if !expanded, let summary {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(summary)
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                        Text(title.shown)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                            .accessibilityLabel(title.spoken)
-                    }
-                    // Read as one: the sentence, then the count and time;
-                    // the button's own value says folded or open.
                     .accessibilityElement(children: .combine)
+                } else if let summary {
+                    summaryLayout(summary, title: title)
                 } else {
-                    Text(title.shown)
-                        .font(expanded ? .subheadline.weight(.semibold) : .subheadline)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .accessibilityLabel(title.spoken)
+                    countLayout(title)
                 }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.conduitTertiary)
-                    .rotationEffect(.degrees(expanded ? 180 : 0))
-                    .accessibilityHidden(true)
             }
             .padding(.horizontal, ChatStepStyle.rowHorizontalPadding)
             .padding(.vertical, ChatStepStyle.rowVerticalPadding)
@@ -762,6 +769,69 @@ private struct ChatStepGroupHeader: View {
         }
         .buttonStyle(.plain)
         .accessibilityValue(expanded ? AppLocalization.string("Expanded") : AppLocalization.string("Collapsed"))
+    }
+
+    private var chevron: some View {
+        Image(systemName: "chevron.down")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.conduitTertiary)
+            .rotationEffect(.degrees(expanded ? 180 : 0))
+            .accessibilityHidden(true)
+    }
+
+    /// Folded with a summary: every step's icon and the count on top, the
+    /// summary under them at full width, never cut.
+    private func summaryLayout(_ summary: String, title: (shown: String, spoken: String)) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: ChatStepStyle.iconGap) {
+                stepIcons
+                Text(title.shown)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
+                    .layoutPriority(1)
+                    .accessibilityLabel(title.spoken)
+                Spacer(minLength: 8)
+                chevron
+            }
+            summaryText(summary)
+        }
+        // Read as one: the summary, then the count and time; the button's
+        // own value says folded or open.
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The run's summary at full width, never cut: under the icons when
+    /// folded, under the count at the top of the open card.
+    private func summaryText(_ summary: String) -> some View {
+        Text(summary)
+            .font(.subheadline)
+            .foregroundStyle(.primary)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Folded without a summary, or open: the kinds of steps and the count.
+    private func countLayout(_ title: (shown: String, spoken: String)) -> some View {
+        HStack(spacing: ChatStepStyle.iconGap) {
+            if !expanded {
+                HStack(spacing: 4) {
+                    ForEach(icons, id: \.symbol) { icon in
+                        ChatStepIcon(symbol: icon.symbol, tint: icon.tint, size: 22)
+                    }
+                }
+            }
+            Text(title.shown)
+                .font(expanded ? .subheadline.weight(.semibold) : .subheadline)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .accessibilityLabel(title.spoken)
+            Spacer(minLength: 8)
+            chevron
+        }
     }
 }
 

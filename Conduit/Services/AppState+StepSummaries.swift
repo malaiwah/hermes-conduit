@@ -21,7 +21,10 @@ extension AppState {
         let target = ChatStepSummaries.Run(scope: toolCatalogKey, toolID: toolID)
         guard stepSummaries[target.scope]?[toolID] == nil, stepSummaryRequested[target] == nil else { return }
         stepSummaryRequested[target] = Date()
-        let question = ChatStepSummaries.question(language: ChatStepSummaries.languageName)
+        let question = ChatStepSummaries.question(
+            language: ChatStepSummaries.languageName,
+            words: ChatStepSummaries.words(toolCount: run.filter { $0.role == .tool }.count)
+        )
         stepSummaryUnclaimed += 1
         Task { [weak self] in
             // A gateway without prompt.btw just leaves "7 steps".

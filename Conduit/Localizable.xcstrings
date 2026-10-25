@@ -334610,166 +334610,166 @@
         }
       }
     },
-    "When a reply took several steps, Hermes writes one sentence about what they did, shown on the folded steps." : {
+    "When a reply took several steps, Hermes looks back on them in a few lines: what it looked for and what it found, shown under the folded steps." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wenn eine Antwort mehrere Schritte brauchte, schreibt Hermes einen Satz dazu, was sie getan haben. Er steht auf den eingeklappten Schritten."
+            "value" : "Wenn eine Antwort mehrere Schritte brauchte, blickt Hermes in ein paar Zeilen darauf zurück: wonach es gesucht und was es gefunden hat. Sie stehen unter den eingeklappten Schritten."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cuando una respuesta necesitó varios pasos, Hermes escribe una frase sobre lo que hicieron, que se muestra en los pasos plegados."
+            "value" : "Cuando una respuesta necesitó varios pasos, Hermes los repasa en unas pocas líneas: qué buscó y qué encontró, debajo de los pasos plegados."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quand une réponse a pris plusieurs étapes, Hermes écrit une phrase sur ce qu’elles ont fait, affichée sur les étapes repliées."
+            "value" : "Quand une réponse a pris plusieurs étapes, Hermes y revient en quelques lignes : ce qu’il cherchait et ce qu’il a trouvé, affichées sous les étapes repliées."
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Saat sebuah balasan memakai beberapa langkah, Hermes menulis satu kalimat tentang apa yang dilakukan, ditampilkan pada langkah yang dilipat."
+            "value" : "Saat sebuah balasan memakai beberapa langkah, Hermes meninjaunya dalam beberapa baris: apa yang dicari dan apa yang ditemukan, ditampilkan di bawah langkah yang dilipat."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quando una risposta ha richiesto più passaggi, Hermes scrive una frase su ciò che hanno fatto, mostrata sui passaggi compressi."
+            "value" : "Quando una risposta ha richiesto più passaggi, Hermes li ripercorre in poche righe: cosa cercava e cosa ha trovato, mostrate sotto i passaggi compressi."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "返信に複数のステップがかかったとき、Hermes がその内容を一文で書き、折りたたんだステップに表示します。"
+            "value" : "返信に複数のステップがかかったとき、Hermes が数行で振り返ります。何を探し、何が分かったかを、折りたたんだステップの下に表示します。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "답변에 여러 단계가 걸렸을 때 Hermes가 무엇을 했는지 한 문장으로 써서 접힌 단계에 표시합니다."
+            "value" : "답변에 여러 단계가 걸렸을 때 Hermes가 몇 줄로 돌아봅니다. 무엇을 찾았고 무엇을 알아냈는지 접힌 단계 아래에 표시합니다."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gdy odpowiedź wymagała kilku kroków, Hermes pisze jedno zdanie o tym, co zrobiły, widoczne na zwiniętych krokach."
+            "value" : "Gdy odpowiedź wymagała kilku kroków, Hermes podsumowuje je w kilku wierszach: czego szukał i co znalazł. Widać je pod zwiniętymi krokami."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quando uma resposta levou várias etapas, o Hermes escreve uma frase sobre o que elas fizeram, mostrada nas etapas recolhidas."
+            "value" : "Quando uma resposta levou várias etapas, o Hermes as revisita em poucas linhas: o que procurou e o que encontrou, mostradas abaixo das etapas recolhidas."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Когда ответ занял несколько шагов, Hermes пишет одно предложение о том, что они сделали. Оно показывается на свёрнутых шагах."
+            "value" : "Когда ответ занял несколько шагов, Hermes подводит итог в нескольких строках: что искал и что нашёл. Они показываются под свёрнутыми шагами."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bir yanıt birkaç adım sürdüğünde Hermes bu adımların ne yaptığını tek cümleyle yazar ve katlanmış adımlarda gösterir."
+            "value" : "Bir yanıt birkaç adım sürdüğünde Hermes bunlara birkaç satırla geri bakar: ne aradığını ve ne bulduğunu katlanmış adımların altında gösterir."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当一条回复用了多个步骤时，Hermes 会用一句话说明这些步骤做了什么，显示在折叠的步骤上。"
+            "value" : "当一条回复用了多个步骤时，Hermes 会用几行回顾：它在找什么、找到了什么，显示在折叠的步骤下方。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "當一則回覆用了多個步驟時，Hermes 會用一句話說明這些步驟做了什麼，顯示在收合的步驟上。"
+            "value" : "當一則回覆用了多個步驟時，Hermes 會用幾行回顧：它在找什麼、找到了什麼，顯示在收合的步驟下方。"
           }
         }
       }
     },
-    "Each sentence is one more short request to your model. It reuses the chat's prompt cache and never changes the chat." : {
+    "Each summary is one more short request to your model. It reuses the chat's prompt cache and never changes the chat." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Jeder Satz ist eine weitere kurze Anfrage an dein Modell. Sie nutzt den Prompt-Cache des Chats und ändert den Chat nie."
+            "value" : "Jede Zusammenfassung ist eine weitere kurze Anfrage an dein Modell. Sie nutzt den Prompt-Cache des Chats und ändert den Chat nie."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cada frase es una solicitud breve más a tu modelo. Reutiliza la caché de prompts del chat y nunca cambia el chat."
+            "value" : "Cada resumen es una solicitud breve más a tu modelo. Reutiliza la caché de prompts del chat y nunca cambia el chat."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Chaque phrase est une courte requête de plus à votre modèle. Elle réutilise le cache de prompt de la conversation et ne la modifie jamais."
+            "value" : "Chaque résumé est une courte requête de plus à votre modèle. Il réutilise le cache de prompt de la conversation et ne la modifie jamais."
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Setiap kalimat adalah satu permintaan singkat tambahan ke model Anda. Permintaan ini memakai ulang cache prompt obrolan dan tidak pernah mengubah obrolan."
+            "value" : "Setiap ringkasan adalah satu permintaan singkat tambahan ke model Anda. Permintaan ini memakai ulang cache prompt obrolan dan tidak pernah mengubah obrolan."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ogni frase è una breve richiesta in più al tuo modello. Riutilizza la cache dei prompt della chat e non modifica mai la chat."
+            "value" : "Ogni riepilogo è una breve richiesta in più al tuo modello. Riutilizza la cache dei prompt della chat e non modifica mai la chat."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "各文はモデルへの短いリクエストが 1 回増えます。チャットのプロンプトキャッシュを再利用し、チャットは変更しません。"
+            "value" : "要約ごとにモデルへの短いリクエストが 1 回増えます。チャットのプロンプトキャッシュを再利用し、チャットは変更しません。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "문장마다 모델에 짧은 요청이 하나 더 갑니다. 채팅의 프롬프트 캐시를 재사용하며 채팅은 바꾸지 않습니다."
+            "value" : "요약마다 모델에 짧은 요청이 하나 더 갑니다. 채팅의 프롬프트 캐시를 재사용하며 채팅은 바꾸지 않습니다."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Każde zdanie to jedno dodatkowe krótkie zapytanie do modelu. Korzysta z pamięci podręcznej promptu czatu i nigdy nie zmienia czatu."
+            "value" : "Każde podsumowanie to jedno dodatkowe krótkie zapytanie do modelu. Korzysta z pamięci podręcznej promptu czatu i nigdy nie zmienia czatu."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cada frase é mais uma solicitação curta ao seu modelo. Ela reutiliza o cache de prompt do chat e nunca altera o chat."
+            "value" : "Cada resumo é mais uma solicitação curta ao seu modelo. Ele reutiliza o cache de prompt do chat e nunca altera o chat."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Каждое предложение — ещё один короткий запрос к модели. Он использует кеш промпта чата и никогда не меняет чат."
+            "value" : "Каждая сводка — ещё один короткий запрос к модели. Он использует кеш промпта чата и никогда не меняет чат."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Her cümle modelinize bir kısa istek daha demektir. Sohbetin istem önbelleğini yeniden kullanır ve sohbeti asla değiştirmez."
+            "value" : "Her özet modelinize bir kısa istek daha demektir. Sohbetin istem önbelleğini yeniden kullanır ve sohbeti asla değiştirmez."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每句话都会向你的模型多发一次简短请求。它复用聊天的提示缓存，绝不会更改聊天。"
+            "value" : "每条摘要都会向你的模型多发一次简短请求。它复用聊天的提示缓存，绝不会更改聊天。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每句話都會向你的模型多送一次簡短請求。它會重用聊天的提示快取，絕不會更改聊天。"
+            "value" : "每則摘要都會向你的模型多送一次簡短請求。它會重用聊天的提示快取，絕不會更改聊天。"
           }
         }
       }
@@ -334856,84 +334856,84 @@
         }
       }
     },
-    "Sentences are kept on this device." : {
+    "Summaries are kept on this device." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Die Sätze bleiben auf diesem Gerät."
+            "value" : "Die Zusammenfassungen bleiben auf diesem Gerät."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las frases se guardan en este dispositivo."
+            "value" : "Los resúmenes se guardan en este dispositivo."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Les phrases restent sur cet appareil."
+            "value" : "Les résumés restent sur cet appareil."
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Kalimat disimpan di perangkat ini."
+            "value" : "Ringkasan disimpan di perangkat ini."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Le frasi restano su questo dispositivo."
+            "value" : "I riepiloghi restano su questo dispositivo."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "文はこのデバイスに保存されます。"
+            "value" : "要約はこのデバイスに保存されます。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "문장은 이 기기에 보관됩니다."
+            "value" : "요약은 이 기기에 보관됩니다."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zdania są przechowywane na tym urządzeniu."
+            "value" : "Podsumowania są przechowywane na tym urządzeniu."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "As frases ficam neste dispositivo."
+            "value" : "Os resumos ficam neste dispositivo."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Предложения хранятся на этом устройстве."
+            "value" : "Сводки хранятся на этом устройстве."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cümleler bu cihazda saklanır."
+            "value" : "Özetler bu cihazda saklanır."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "这些句子保存在此设备上。"
+            "value" : "这些摘要保存在此设备上。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "這些句子保存在此裝置上。"
+            "value" : "這些摘要保存在此裝置上。"
           }
         }
       }

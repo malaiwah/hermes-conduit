@@ -1,11 +1,12 @@
 import Foundation
 
-/// One sentence for a finished turn's run of steps, in place of "7 steps"
-/// on its collapsed line. Opt-in (Settings > Chat). Once a turn ends with a
+/// A short train of thought for a finished turn's run of steps, under its
+/// icons on the collapsed line: what Hermes was after and what each step
+/// turned up, about one line per tool call. Opt-in (Settings > Chat). Once a turn ends with a
 /// long enough run, Conduit asks Hermes a hidden `/btw`: Hermes answers it
 /// from a copy of the live conversation that reuses the prompt cache and
 /// can't call tools or change the chat (`agent/side_question.py`), so the
-/// question costs the cached prefix and a few dozen tokens. The sentence is
+/// question costs the cached prefix and some 150 tokens. The summary is
 /// kept on this device, by dashboard and profile and the run's first tool
 /// call; turning the switch off hides the kept ones. Only a run whose tool
 /// calls have ids of their own is described: an id a provider numbers per
@@ -63,25 +64,56 @@ enum ChatStepSummaries {
         return tools.count >= minimumToolSteps ? run : nil
     }
 
-    static let questionHead = "Describe in one short sentence"
-    private static let questionTail = "Reply with the sentence only."
+    /// The summary's size: about one line on the phone per tool call,
+    /// up to this many lines.
+    static let maxLines = 8
+    /// Words that fill about one line of the folded run.
+    static let wordsPerLine = 9
 
-    static func question(language: String) -> String {
-        "\(questionHead) (at most 15 words) what you did in the tool calls just before your last reply. "
+    static let questionHead = "Look back at the tool calls you made just before your last reply"
+    private static let questionTail = "Reply with the paragraph only."
+
+    /// A retrospective train of thought, not a list of tools: Hermes
+    /// answers from the whole conversation, every call's arguments and
+    /// results included, so it can say what it was after and what turned
+    /// up.
+    static func question(language: String, words: Int) -> String {
+        "\(questionHead). In \(language), tell the user your train of thought through them, looking back: "
+            + "what you were after, what each step turned up, and what you made of it, ending on the last thing you found, not on your reply. "
+            + "Use the real content (queries, files, commands, numbers, results), never the tool names: "
+            + "not \"I ran the terminal and used search\", but \"I checked the sandbox first: 16 GB of RAM and a fresh start, so…\". "
+            + "One natural, flowing paragraph of at most \(words) words, first person, past tense: "
+            + "no list, headings or preamble, and nothing about how many calls there were. "
             + "It labels those steps, folded, in the user's chat app. "
-            + "Write it in \(language), in the past tense, like \"Searched three sites and compared their prices\". "
             + questionTail
     }
 
-    /// Whether a /btw asked exactly this, in whichever language it names:
-    /// its answer, late or replayed, or another device's, is never shown
-    /// as a note.
+    /// The word budget for a run of this many tool calls.
+    static func words(toolCount: Int) -> Int {
+        min(max(toolCount, 1), maxLines) * wordsPerLine
+    }
+
+    /// Whether a /btw asked exactly this, in whichever language and word
+    /// count it names, or the one-sentence question an earlier Conduit
+    /// asked: its answer, late or replayed, or another device's, is never
+    /// shown as a note.
     static func isQuestion(_ text: String?) -> Bool {
-        guard let text, text.hasPrefix(questionHead),
+        guard let text else { return false }
+        if text.hasPrefix(questionHead),
+           let language = text.firstMatch(of: #/\. In (.+?), tell the user/#),
+           let words = text.firstMatch(of: #/paragraph of at most (\d+) words/#),
+           let count = Int(words.1) {
+            return text == question(language: String(language.1), words: count)
+        }
+        // The question until 2.2.1.
+        guard text.hasPrefix("Describe in one short sentence"),
               let start = text.range(of: "Write it in "),
               let end = text.range(of: ", in the past tense", range: start.upperBound..<text.endIndex)
         else { return false }
-        return text == question(language: String(text[start.upperBound..<end.lowerBound]))
+        return text == "Describe in one short sentence (at most 15 words) what you did in the tool calls just before your last reply. "
+            + "It labels those steps, folded, in the user's chat app. "
+            + "Write it in \(text[start.upperBound..<end.lowerBound]), in the past tense, like \"Searched three sites and compared their prices\". "
+            + "Reply with the sentence only."
     }
 
     /// The app's language, named in English for the question.
@@ -91,17 +123,24 @@ enum ChatStepSummaries {
         return Locale(identifier: "en_US").localizedString(forLanguageCode: code) ?? "English"
     }
 
-    /// The answer as a line: its first line, without quotes or a label.
-    /// Nil for an error, an empty answer or one too long to be a label.
+    /// The answer as one paragraph, without quotes, bold or a list's
+    /// bullets. Nil for an error, an empty answer or one far past its
+    /// budget.
     static func cleaned(_ text: String) -> String? {
-        var line = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !line.lowercased().hasPrefix("error:") else { return nil }
-        line = line.components(separatedBy: .newlines).first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? ""
-        line = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’«»*"))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !line.isEmpty, line.count <= 200 else { return nil }
-        return line
+        let whole = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !whole.lowercased().hasPrefix("error:") else { return nil }
+        var parts: [String] = []
+        for raw in whole.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+                .replacingOccurrences(of: #"^([-•*·–—]|\d+[.)])\s+"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: "**", with: "")
+                .trimmingCharacters(in: .whitespaces)
+            if !line.isEmpty { parts.append(line) }
+        }
+        let paragraph = parts.joined(separator: " ")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’«»*").union(.whitespaces))
+        guard !paragraph.isEmpty, paragraph.count <= maxLines * wordsPerLine * 12 else { return nil }
+        return paragraph
     }
 
     // MARK: - Saved sentences

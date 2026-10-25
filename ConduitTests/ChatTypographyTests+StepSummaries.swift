@@ -37,26 +37,42 @@ extension ChatTypographyTests {
         XCTAssertNil(ChatStepSummaries.key(toolIDs: []))
     }
 
-    func testTheAnswerBecomesOneLine() {
-        XCTAssertEqual(ChatStepSummaries.cleaned("  \"Compared three menus and picked two.\"\n"), "Compared three menus and picked two.")
-        XCTAssertEqual(ChatStepSummaries.cleaned("\n**Read the logs**\nand more"), "Read the logs")
+    func testTheAnswerBecomesOneParagraph() {
+        XCTAssertEqual(ChatStepSummaries.cleaned("  \"I compared three menus and picked two.\"\n"), "I compared three menus and picked two.")
+        XCTAssertEqual(
+            ChatStepSummaries.cleaned("\n- I checked the **sandbox** first: 16 GB of RAM.\n\n2. Then I found the changelog entry."),
+            "I checked the sandbox first: 16 GB of RAM. Then I found the changelog entry."
+        )
+        XCTAssertNil(ChatStepSummaries.cleaned(String(repeating: "word ", count: 400)))
         XCTAssertNil(ChatStepSummaries.cleaned("error: backend is retiring"))
         XCTAssertNil(ChatStepSummaries.cleaned("   "))
-        XCTAssertNil(ChatStepSummaries.cleaned(String(repeating: "word ", count: 60)))
     }
 
-    func testTheQuestionNamesTheLanguageAndIsRecognizable() {
-        let question = ChatStepSummaries.question(language: "French")
+    func testTheQuestionAsksForATrainOfThoughtAndIsRecognizable() {
+        let question = ChatStepSummaries.question(language: "French", words: 27)
         XCTAssertTrue(question.hasPrefix(ChatStepSummaries.questionHead))
-        XCTAssertTrue(question.contains("Write it in French"))
-        // Any language's question is the summary's, never the user's /btw.
+        XCTAssertTrue(question.contains("In French, tell the user your train of thought"))
+        XCTAssertTrue(question.contains("at most 27 words"))
+        XCTAssertTrue(question.contains("never the tool names"))
+        // About one line on the phone per tool call.
+        XCTAssertEqual(ChatStepSummaries.words(toolCount: 3), 3 * ChatStepSummaries.wordsPerLine)
+        XCTAssertEqual(ChatStepSummaries.words(toolCount: 40), ChatStepSummaries.maxLines * ChatStepSummaries.wordsPerLine)
+        // Any language's and any budget's question is the summary's, never
+        // the user's /btw.
         XCTAssertTrue(ChatStepSummaries.isQuestion(question))
-        XCTAssertTrue(ChatStepSummaries.isQuestion(ChatStepSummaries.question(language: "Japanese")))
-        XCTAssertFalse(ChatStepSummaries.isQuestion("Describe in one short sentence what you just did"))
+        XCTAssertTrue(ChatStepSummaries.isQuestion(ChatStepSummaries.question(language: "Japanese", words: 72)))
+        XCTAssertFalse(ChatStepSummaries.isQuestion("Look back at the tool calls you made just before your last reply"))
         // The whole question, not its first and last words.
-        let edited = question.replacingOccurrences(of: "(at most 15 words)", with: "(at most 30 words)")
+        let edited = question.replacingOccurrences(of: "first person", with: "third person")
         XCTAssertFalse(ChatStepSummaries.isQuestion(edited))
         XCTAssertFalse(ChatStepSummaries.isQuestion(nil))
+        // An earlier Conduit's one-sentence question is still kept out of the chat.
+        let earlier = "Describe in one short sentence (at most 15 words) what you did in the tool calls just before your last reply. "
+            + "It labels those steps, folded, in the user's chat app. "
+            + "Write it in German, in the past tense, like \"Searched three sites and compared their prices\". "
+            + "Reply with the sentence only."
+        XCTAssertTrue(ChatStepSummaries.isQuestion(earlier))
+        XCTAssertFalse(ChatStepSummaries.isQuestion("Describe in one short sentence what you just did"))
     }
 
     func testSentencesAreKeptPerProfileAndTheOldestGoFirst() throws {
