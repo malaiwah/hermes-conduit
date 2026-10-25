@@ -6,6 +6,7 @@
 //  This is a NATIVE SwiftUI app, not a React Native port.
 //
 
+import Combine
 import SwiftUI
 import UIKit
 import UserNotifications
@@ -281,6 +282,22 @@ struct ConduitApp: App {
             // settles: dragging in the colour picker changes it many times.
             .task(id: accentChoice) {
                 guard (try? await Task.sleep(for: .milliseconds(600))) != nil else { return }
+                appState.shareWatchCallVoices()
+            }
+            // So does the padlock or shield: shared again once any change to
+            // the notifications state settles (keys, confirmations, the
+            // switch, and also unrelated ones such as push routes; the Watch
+            // link sends only a context that differs from the last one).
+            .task {
+                let changes = PushNotificationService.shared.objectWillChange
+                    .debounce(for: .milliseconds(600), scheduler: RunLoop.main)
+                for await _ in changes.values {
+                    appState.shareWatchCallVoices()
+                }
+            }
+            // And when the active dashboard changes, even when nothing about
+            // notifications does (a switch whose sign-in fails).
+            .task(id: appState.activeDashboardID) {
                 appState.shareWatchCallVoices()
             }
 #if DEBUG

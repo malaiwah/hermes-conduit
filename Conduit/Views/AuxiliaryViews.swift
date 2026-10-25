@@ -3692,7 +3692,7 @@ private struct NotificationsSettingsDetail: View {
                             // A tap while keys are being set up would only
                             // wait for the next connect.
                             .disabled(notifications.isProvisioningEncryption)
-                            Text("Conduit gives this dashboard's hosts new keys by itself every 30 days. The old keys still open notifications already on their way for 7 days.")
+                            Text("Conduit gives this dashboard's hosts new keys by itself every 7 days. The old keys still open notifications already on their way for 7 days.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
@@ -3982,12 +3982,25 @@ private struct NotificationsSettingsDetail: View {
         // The padlock is closed only when the host confirmed it seals with
         // the key this iPhone holds, and that key isn't long overdue.
         let assurance = notifications.encryptionAssurance(gatewayID: gateway.id)
-        if case .ensured(let createdAt, let rotates) = assurance {
+        if notifications.unsavedRotationGatewayIDs.contains(gateway.id) {
+            // A rotation the host took whose new key the Keychain refused:
+            // said as it is, not as a generic mismatch.
+            Label(AppLocalization.string("This host has a new encryption key that Conduit couldn't save on this iPhone, so its notifications show only generic text. Conduit asks for it again the next time it connects to this dashboard."), systemImage: "exclamationmark.triangle.fill")
+                .font(.footnote)
+                .foregroundStyle(.orange)
+        } else if case .ensured(let createdAt, let rotates, let quantumSafe) = assurance {
+            let date = createdAt.formatted(date: .abbreviated, time: .omitted)
+            // The shield replaces the padlock once the key came from an
+            // ML-KEM rotation: quantum-safe end to end.
             Label(
-                rotates
-                    ? AppLocalization.string("End-to-end encrypted with a key from \(createdAt.formatted(date: .abbreviated, time: .omitted)). Only this iPhone can read these notifications; the relay sees when they arrive, not what they say. The key changes every 30 days.")
-                    : AppLocalization.string("End-to-end encrypted. Only this iPhone can read these notifications; the relay sees when they arrive, not what they say. Update this host's notifier so the key changes every 30 days."),
-                systemImage: "lock.fill"
+                quantumSafe
+                    ? AppLocalization.string("End-to-end encrypted and quantum-safe, with a key from \(date). Only this iPhone can read these notifications; the relay sees when they arrive, not what they say. The key changes every 7 days.")
+                    : !rotates
+                        ? AppLocalization.string("End-to-end encrypted. Only this iPhone can read these notifications; the relay sees when they arrive, not what they say. Update this host's notifier so the key changes every 7 days.")
+                        : NotificationKeyRotation.supportsPQ
+                            ? AppLocalization.string("End-to-end encrypted with a key from \(date). Only this iPhone can read these notifications; the relay sees when they arrive, not what they say. The key changes every 7 days.")
+                            : AppLocalization.string("End-to-end encrypted with a key from \(date). Only this iPhone can read these notifications; the relay sees when they arrive, not what they say. The key changes every 7 days; update to iOS 26 to make it quantum-safe."),
+                systemImage: quantumSafe ? "lock.shield.fill" : "lock.fill"
             )
             .font(.footnote)
             .foregroundStyle(.secondary)

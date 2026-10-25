@@ -198,11 +198,13 @@ struct SavedDashboardRowLabel: View {
                 HStack(spacing: 4) {
                     Text(verbatim: row.dashboard.label)
                         .font(.subheadline.weight(.semibold))
-                    if notificationsEncrypted {
-                        Image(systemName: "lock.fill")
+                    if let quantumSafe = notificationsEncryption {
+                        Image(systemName: quantumSafe ? "lock.shield.fill" : "lock.fill")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                            .accessibilityLabel(AppLocalization.string("Notifications end-to-end encrypted"))
+                            .accessibilityLabel(quantumSafe
+                                ? AppLocalization.string("Notifications end-to-end encrypted and quantum-safe")
+                                : AppLocalization.string("Notifications end-to-end encrypted"))
                     }
                 }
                 Text(verbatim: row.dashboard.normalizedURL)
@@ -240,16 +242,11 @@ struct SavedDashboardRowLabel: View {
             : AppLocalization.string("Sign In required")
     }
 
-    /// Every pairing of this dashboard's hosts is end-to-end encrypted with
-    /// a key the host confirmed (the details are in Settings >
-    /// Notifications).
-    private var notificationsEncrypted: Bool {
-        guard notifications.isEnabled else { return false }
-        let gatewayIDs = appState.relayGatewayIDs(of: row.dashboard.id)
-        return !gatewayIDs.isEmpty && gatewayIDs.allSatisfy { gatewayID in
-            if case .ensured = notifications.encryptionAssurance(gatewayID: gatewayID) { return true }
-            return false
-        }
+    /// Nil unless this dashboard's notifications are end-to-end encrypted;
+    /// true when also quantum-safe (AppState.notificationsEncryption).
+    /// Observing `notifications` redraws it when a key changes.
+    private var notificationsEncryption: Bool? {
+        appState.notificationsEncryption(of: row.dashboard.id)
     }
 
     private var actionText: String {
