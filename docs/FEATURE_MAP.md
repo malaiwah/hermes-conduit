@@ -399,6 +399,34 @@ mode menu)
 
 **Checked:** 2026-10-27, added at #1355 (Switch voice on a failed call is a round button).
 
+## Switching voice mode in a call
+
+The voice mode menu on a call screen: it ends the call and starts again in the
+mode picked, in the same chat, and Voice settings keep the new mode.
+
+**Siblings:** the mode capsule under a live call's title (Gemini, Qwen, Grok,
+GPT-Live, Local Live) · Classic's mode capsule · a failed live call's Switch
+voice button · Voice settings' mode picker · CarPlay and the Apple Watch (no
+mode menu)
+
+**Code**
+- Menu and capsule: `Conduit/Views/VoiceModeMenu.swift` (VoiceModeMenu, VoiceModeCapsule), `Conduit/Voice/VoiceModeChoice.swift` (VoiceModeSwitch)
+- The switch: `Conduit/Services/AppState.swift` (voiceModeSwitch, switchVoiceMode)
+- Live call screen: `Conduit/Views/LiveVoiceCallSheet.swift` (VoiceModeCapsule under the title; LiveVoiceCallModeMenuButton on a failed call), shown from `Conduit/Views/GeminiLiveViews.swift` and `Conduit/Views/GPTLiveViews.swift`
+- Classic: `Conduit/Views/VoiceConversationSheet.swift` (VoiceModeCapsule), shown from `Conduit/Views/RootView.swift`
+- Tests: `ConduitTests/AppStateVoiceCapabilityTests+VoiceModeSwitch.swift`
+
+**Rulings**
+- Picking the call's own mode leaves the call as it is, except a hands-free Local Live call listed as Classic, which moves (VoiceModeSwitch.movesOnCurrent).
+- A failed live call offers Switch voice beside Try again, so a mode that keeps refusing (a plan's limit, a provider's outage) needn't end the conversation (#964).
+- Switch voice is a round button like the call's others: only the glyph is the menu's label, and the caption sits under it, hidden from VoiceOver since the menu carries the name. On iOS 26 a menu draws its glass over its whole label, so a caption inside it made a large slab that clipped the caption (2026-10-27, #1355).
+
+**Open gaps**
+- CarPlay and the Watch have no mode menu: a call there changes mode only through Voice settings.
+- Switch voice's caption no longer opens the menu; only the round glyph does (#1355).
+
+**Checked:** 2026-10-27, added at #1355 (Switch voice on a failed call is a round button).
+
 ## Voice beside the tabs
 
 The gold button beside the tab bar, and where voice goes when it is swapped
