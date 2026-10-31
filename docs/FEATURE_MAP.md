@@ -4285,6 +4285,38 @@ read-only legacy groups (no scroll locator to watch)
 
 **Checked:** 2026-10-31, #1554 (chat traces: the recorder in every build, its watchers in chats and group rooms, the stall trace riding with a freeze's report, Diagnostics & logs' Chat traces, the privacy manifest's Other Diagnostic Data; notifier #481, relay 0.25.0); 2026-10-29, #1505.
 
+## Phone data sync with the host
+
+The phone sending calendar, reminders, alarms, contacts and phone status,
+health data and location to the notifier, each under its own agreed key, and
+what it does when the host refuses.
+
+**Siblings:** phone sync (calendar, reminders, alarms, contacts, Focus and
+status) · health sync · location sharing · the voice reads that use the same
+keys · each one's pause message in Settings · a locate answered from the push
+extension · the notifier's three stores and their refusals
+
+**Code**
+- Phone: `Conduit/Phone/PhoneSyncEngine.swift` (pass), `Conduit/Phone/PhoneSyncModels.swift` (PhoneSyncPause)
+- Health: `Conduit/Health/HealthSyncEngine.swift`, `Conduit/Health/HealthSyncModels.swift` (HealthSyncPause)
+- Location: `Conduit/Location/LocationSyncEngine.swift` (send, LocationSyncPause), `Conduit/Location/LocationSharingController.swift` (sendNow: keeps the batch on `.failed`), `ConduitLocationPush/LocationPushService.swift` (a locate answered from the push extension)
+- Which 409 means what: `Conduit/Services/HostKeyConflict.swift`
+- Voice reads: `Conduit/Services/AppState+VoiceHostTools.swift`, `Conduit/Phone/PhoneVoiceTools.swift`
+- Notifier: `notifier/phone_store.py`, `notifier/health_store.py`, `notifier/location_store.py`, `notifier/dashboard/plugin_api.py` (_store_refusal)
+- Tests: `ConduitTests/PhoneSyncTests.swift`, `ConduitTests/HealthSyncTests.swift`, `ConduitTests/LocationSharingTests.swift`
+
+**Rulings**
+- Only a 409 that says the host lost this phone's key (`unknown_key`, `bad_seal`) clears the key and sets up again; any other 409 keeps it (2026-10-19, #906; 2026-10-20, #1025).
+- A store written by a newer plugin (409 `schema`) pauses with the "update the Conduit plugin" message, keeps the key and keeps what waits to be sent (2026-10-24, #1196).
+- A later refusal, timeout or 404 replaces that plugin-update pause with its own message, as for any other pause (2026-10-24, #1196).
+
+**Open gaps**
+- The dashboard sends the store's code beside its message, but the phone keeps only the message: a reworded notifier message is missed until `Conduit/Services/HostKeyConflict.swift` learns it. Phone and health then pause with the host's reason; location drops the waiting fix and events as refused.
+- A locate answered from the push extension drops its fix on any failed post, a 409 `schema` included, and shows no pause: it is a one-shot answer, and the app shares its own fix next time.
+- A voice read that meets a 409 `schema` tells the model only that the read failed, not that the plugin needs an update.
+
+**Checked:** 2026-10-24, at main e9d9592.
+
 ## Feature map rules
 
 How a change brings its connected features along, and how this map stays
